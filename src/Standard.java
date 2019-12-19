@@ -19,6 +19,9 @@ public class Standard implements Serializable {
     double SIFS_5; //for 5GHz
     double short_slot_time;
     double long_slot_time;
+    int CWmin = 15; //typical size of min CW
+    int CWmax = 1023; //typical size of max CW
+
     //Note: DIFS equals SIFS+2*slot_time
 
     public Standard(Name name) {

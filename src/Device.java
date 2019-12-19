@@ -46,6 +46,7 @@ public class Device implements InputListener, Runnable, Serializable {
 
     private HashMap<Device, TransmissionListener> listeners = new HashMap<>(); //for channel listeners
     long timeout; //for "Fast Retransmit and Recovery" mechanism, in milliseconds
+    int current_CW;
     // each connected device is mapped to its corresponding channel
 
     public long getPeriod() {
@@ -72,6 +73,7 @@ public class Device implements InputListener, Runnable, Serializable {
         this.ctrl_buffer = new PriorityQueue<>();
         this.net = net;
         this.timeout = timeout;
+        this.current_CW = sup_standard.CWmin; //begins from the minimum
 
         //this.input_handling = new Thread(this.input_handler);
         //input_handling.start();
@@ -220,6 +222,8 @@ public class Device implements InputListener, Runnable, Serializable {
         }
         //the channel is free! now wait the needed IFS time, depends on the packet type
         double timeToWait = 0;
+        Random r = new Random();
+        int backoff = r.nextInt((this.current_CW)+1);
         switch (packetToSend.type) {
             case MANAGMENT:
                 timeToWait = this.sup_standard.SIFS_5;
@@ -383,8 +387,8 @@ public class Device implements InputListener, Runnable, Serializable {
     @Override
     public synchronized boolean InputArrived(Packet packet) {
 
-        Date date = new Date();
-        packet.setArrival_ts(new Timestamp(date.getTime())); //update the packet arrival time because it arrived now
+        //Date date = new Date();
+        //packet.setArrival_ts(new Timestamp(date.getTime())); //update the packet arrival time because it arrived now
 
         if(packet.type == PType.CONTROL)
         {

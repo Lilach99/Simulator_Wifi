@@ -21,6 +21,7 @@ public class Packet implements Comparable<Packet>, Serializable {
     PType type;
     boolean need_ack;
     String payload;
+    boolean lost; //identifies whether the packet got lost in her way to the destination (due to collision, noise, etc.)
 
     public Packet(Device src, Device connector, Device dst, Standard standard, int lenght, PType type, boolean need_ack) {
         Date date = new Date();
@@ -33,6 +34,7 @@ public class Packet implements Comparable<Packet>, Serializable {
         this.type = type;
         this.need_ack = need_ack;
         this.sending_ts = null;
+        this.lost = false;
     }
 
     public Packet(Device src, Device connector, Device dst, Standard standard, int lenght, PType type, boolean need_ack, String payload) {
@@ -47,6 +49,7 @@ public class Packet implements Comparable<Packet>, Serializable {
         this.need_ack = need_ack;
         this.sending_ts = null;
         this.payload = payload;
+        this.lost = false;
     }
 
     public Timestamp getSending_ts() {
@@ -120,5 +123,9 @@ public class Packet implements Comparable<Packet>, Serializable {
     @Override
     public int compareTo(Packet o) { //we need that function because we order the packets in a priority queue
         return this.getTs().compareTo(o.getTs()); //a packet priority is determined by its timestamp
+    }
+
+    public void Lost() { //losing the packet - marking it sa a lost one
+        this.lost = true;
     }
 }

@@ -22,6 +22,7 @@ public class Medium implements TransmissionListener, Serializable {
 
     int wifi_chan_num; //between 1-14
     double rate; //in bps - bits per second - only represents the packets sending rate between the devices, has nothing to do with the medium
+    double sending_rate = 2*10^6; //in bps - the sending rate of the "medium" (2Mbps for now)
     double distance;
     double packet_loss_per;
     double prop_delay;
@@ -32,8 +33,8 @@ public class Medium implements TransmissionListener, Serializable {
 
     ComState comState; //represent the state of connection between the two channel's endpoints
 
-    HashMap<Packet, Pair<Timestamp, Timestamp>> busy_intervals_p1; //for each packet destined to p1, it saves the time interval during which the channel is busy from p1's point of view
-    HashMap<Packet, Pair<Timestamp, Timestamp>> busy_intervals_p2;//for each packet destined to p2, it saves the time interval during which the channel is busy from p2's point of view
+    HashMap<Pair<Timestamp, Timestamp>, Packet> busy_intervals_p1; //for each packet destined to p1, it saves the time interval during which the channel is busy from p1's point of view
+    HashMap<Pair<Timestamp, Timestamp>, Packet> busy_intervals_p2;//for each packet destined to p2, it saves the time interval during which the channel is busy from p2's point of view
     private int collision_num = 0; //indicated the number of collisions happened so far (since the simulation of communication began)
 
     public Medium(Device p1, Device p2, int wifi_chan_num, double rate, double distance, double packet_loss_per, Standard standard, Network net) {
@@ -76,31 +77,28 @@ public class Medium implements TransmissionListener, Serializable {
         cal.setTimeInMillis(original.getTime());
         cal.add(Calendar.MILLISECOND, (int) (prop_delay * 1000)); //TODO: check whether it is accurate enough (probably not), and of not - consider scaling...
         Timestamp busyStart = new Timestamp(cal.getTime().getTime());
-        cal.add(Calendar.MILLISECOND, (int)(packet.getLength()/rate)*1000); //TODO: change the rate to a constant in bps, not the packet sending rate in pps
+        cal.add(Calendar.MILLISECOND, (int)(packet.getLength()/sending_rate)*1000); //the sending time is the packet length in its divided by the sending rate
         Timestamp busyEnd = new Timestamp(cal.getTime().getTime());
 
         if (dst == p1) //the packet is destined to p1
         {
-            busy_intervals_p1.put(packet, new Pair<>(busyStart, busyEnd));
+            busy_intervals_p1.put(new Pair<>(busyStart, busyEnd), packet);
         }
         if (dst == p2) //the packet is destined to p2
         {
-            busy_intervals_p2.put(packet, new Pair<>(busyStart, busyEnd));
+            busy_intervals_p2.put(new Pair<>(busyStart, busyEnd), packet);
         }
 
         //this.busy = true; //the medium is busy
 
         //propagation time + packet length - only after that the packet arrives to its destination
-
+/*
         //TODO: get rid of the sleep, a medium cannot sleep!
         try {
-            TimeUnit.SECONDS.sleep((long) ((this.distance / C_AIR) + packet.getLength()/rate)); //channel is propagating the packet
-       //TODO: change the rate here
+            TimeUnit.SECONDS.sleep((long) ((this.distance / C_AIR) + packet.getLength()/sending_rate)); //channel is propagating the packet
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-
-
 
         //the busy interval got to its end, so we remove it from the DS of busy intervals
         if (dst == p1) //the packet was destined to p1
@@ -111,13 +109,15 @@ public class Medium implements TransmissionListener, Serializable {
         {
             busy_intervals_p2.remove(packet);
         }
-
+*/
         //this.busy = false; //free the medium
 
-        //TODO: update the TS of the packet to the wanted arrival time and send it without sleep
         if (notLost(loss)) { //simulates the packet loss percentage feature
-            dst.InputArrived(packet);
+            packet.setArrival_ts(busyEnd); //the packet should arrive to its destination only after the sending time is over
+            collisionDetection(); //check if a collision occurred, and if so, mark the packet as a lost one and only then send it to the destination
+            dst.InputArrived(packet); //TODO: think hoe to simulate it right, because the collision detection method is not enough... devices are sending ack even of the packet collided
         }
+        else packet.Lost(); //packet got lost due to the medium noise
         return true; //we finished the sending procedure
     }
 
@@ -144,7 +144,7 @@ public class Medium implements TransmissionListener, Serializable {
         Timestamp currentTs = new Timestamp(date.getTime());
         if (currentDev == p1) {
             //go over the intervals and check each of them
-            for (Pair<Timestamp, Timestamp> interval : busy_intervals_p1.values()) {
+            for (Pair<Timestamp, Timestamp> interval : busy_intervals_p1.keySet()) {
                 if (currentTs.after(interval.getKey()) && currentTs.before(interval.getValue())) {
                     return true; //the current timestamp belongs to one of the busy intervals of p1
                 }
@@ -152,7 +152,7 @@ public class Medium implements TransmissionListener, Serializable {
         } else //currentDev is p2
         {
             //go over the intervals and check each of them
-            for (Pair<Timestamp, Timestamp> interval : busy_intervals_p2.values()) {
+            for (Pair<Timestamp, Timestamp> interval : busy_intervals_p2.keySet()) {
                 if (currentTs.after(interval.getKey()) && currentTs.before(interval.getValue())) {
                     return true; //the current timestamp belongs to one of the busy intervals of p2
                 }
@@ -166,9 +166,9 @@ public class Medium implements TransmissionListener, Serializable {
     //a collision happens when there exist 2 intersected intervals from different buffer in the busy intervals buffers of the endpoints
     public void collisionDetection()
     {
-        for (Pair<Timestamp, Timestamp> p1t : busy_intervals_p1.values())
+        for (Pair<Timestamp, Timestamp> p1t : busy_intervals_p1.keySet())
         {
-            for(Pair<Timestamp, Timestamp> p2t : busy_intervals_p2.values())
+            for(Pair<Timestamp, Timestamp> p2t : busy_intervals_p2.keySet())
             {
                 Timestamp t1 = p1t.getKey();
                 Timestamp t2 = p1t.getValue();
@@ -182,7 +182,13 @@ public class Medium implements TransmissionListener, Serializable {
                     //the intervals [t1, t2] and [t3, t4] intersects and they belong to different buffers!
                     //collision occurred!
                     collision_num ++;
-                    //TODO: mark the 2 packets as corrupted and repeat this function every time we send a packet
+                    //lose both the packets, meaning mark them as lost ones
+                    Packet p1 = busy_intervals_p1.get(p1t);
+                    Packet p2 = busy_intervals_p2.get(p2t);
+                    p1.Lost();
+                    p2.Lost();
+
+                    //TODO: repeat this function every time we send a packet
                 }
             }
         }
