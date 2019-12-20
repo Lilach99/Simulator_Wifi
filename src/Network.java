@@ -73,7 +73,7 @@ public class Network implements Serializable {
             devices.add(dev);
 
             //adds a medium between the device and the network Access Point
-            Medium med = this.createMedium(AP, dev, plp, 500, 11); // TODO: decide how to choose the wifi channel number (1-14).
+            Medium med = this.createMedium(AP, dev, plp, 50000, 11); //selects channel 11 always, can be changed
             mediums.add(med);
             this.AP.connected_devs.put(dev, med);
             dev.addConnectedDev(this.AP, med);

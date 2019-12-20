@@ -2,6 +2,8 @@ import javafx.util.Pair;
 
 import java.io.Serializable;
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
@@ -22,7 +24,7 @@ public class Medium implements TransmissionListener, Serializable {
 
     int wifi_chan_num; //between 1-14
     double rate; //in bps - bits per second - only represents the packets sending rate between the devices, has nothing to do with the medium
-    double sending_rate = 2*10^6; //in bps - the sending rate of the "medium" (2Mbps for now)
+    double sending_rate = 2*Math.pow(10, 6); //in bps - the sending rate of the "medium" (2Mbps for now)
     double distance;
     double packet_loss_per;
     double prop_delay;
@@ -50,7 +52,7 @@ public class Medium implements TransmissionListener, Serializable {
         this.net = net;
         busy_intervals_p1 = new HashMap<>();
         busy_intervals_p2 = new HashMap<>();
-        prop_delay = distance / C_AIR; //the propagation delay of the channel, will be larger as the distance grows
+        prop_delay = distance / C_AIR; //the propagation delay of the channel in seconds, will be larger as the distance grows
         cleanup_service = new Cleanup(this);
         cleanup_thread = new Thread(cleanup_service);
         cleanup_thread.start();
@@ -77,13 +79,14 @@ public class Medium implements TransmissionListener, Serializable {
         //if we got here, everything is OK
 
         //calculates the medium busyness interval as it should be seen from the packet's destination point of view
+        //the resolution is nanoseconds, and it works accurately
         Timestamp original = packet.getTs();
-        Calendar cal = Calendar.getInstance();
-        cal.setTimeInMillis(original.getTime());
-        cal.add(Calendar.MILLISECOND, (int) (prop_delay * 1000)); //TODO: check whether it is accurate enough (probably not), and of not - consider scaling...
-        Timestamp busyStart = new Timestamp(cal.getTime().getTime());
-        cal.add(Calendar.MILLISECOND, (int)(packet.getLength()/sending_rate)*1000); //the sending time is the packet length in its divided by the sending rate
-        Timestamp busyEnd = new Timestamp(cal.getTime().getTime());
+        Timestamp busyStart = new Timestamp(original.getTime());
+        busyStart.setNanos(original.getNanos());
+        busyStart.setNanos(busyStart.getNanos() + (int)(prop_delay * Math.pow(10, 9)));
+        Timestamp busyEnd = new Timestamp(busyStart.getTime());
+        busyEnd.setNanos(busyStart.getNanos());
+        busyEnd.setNanos(busyEnd.getNanos() + (int)((packet.getLength()/sending_rate)*Math.pow(10, 9))); //the sending time is the packet length in its divided by the sending rate
 
         if (dst == p1) //the packet is destined to p1
         {
@@ -98,7 +101,6 @@ public class Medium implements TransmissionListener, Serializable {
 
         //propagation time + packet length - only after that the packet arrives to its destination
 /*
-        //TODO: get rid of the sleep, a medium cannot sleep!
         try {
             TimeUnit.SECONDS.sleep((long) ((this.distance / C_AIR) + packet.getLength()/sending_rate)); //channel is propagating the packet
         } catch (InterruptedException e) {
@@ -119,8 +121,13 @@ public class Medium implements TransmissionListener, Serializable {
 
         if (notLost(loss)) { //simulates the packet loss percentage feature
             packet.setArrival_ts(busyEnd); //the packet should arrive to its destination only after the sending time is over
-            collisionDetection(); //check if a collision occurred, and if so, mark the packet as a lost one and only then send it to the destination
-            dst.InputArrived(packet); //TODO: think hoe to simulate it right, because the collision detection method is not enough... devices are sending ack even of the packet collided
+            if(!isCollidedPacket(new Pair<>(busyStart, busyEnd), packet))
+            {
+                //notify the destination about the packet only of it's not collided
+                dst.InputArrived(packet);
+            }
+            //collisionDetection(); //check if a collision occurred, and if so, mark the packet as a lost one and only then send it to the destination
+            //TODO: think hoe to simulate it right, because the collision detection method is not enough... devices are sending ack even of the packet collided
         }
         else packet.Lost(); //packet got lost due to the medium noise
         return true; //we finished the sending procedure
@@ -192,10 +199,59 @@ public class Medium implements TransmissionListener, Serializable {
                     Packet p2 = busy_intervals_p2.get(p2t);
                     p1.Lost();
                     p2.Lost();
+                    for (ControlPacket p : p1.getDst().ctrl_buffer) //go over ack packets which arrived to this device
+                    {
+                        if (p.packet_ack == p1) {
+                            p1.getDst().ctrl_buffer.remove(p); //take the ack packet on the collided packet out of the buffer, because ot did not really arrived
+                        }
+                    }
+                    for (ControlPacket p : p2.getDst().ctrl_buffer) //go over ack packets which arrived to this device
+                    {
+                        if (p.packet_ack == p2) {
+                            p2.getDst().ctrl_buffer.remove(p); //same for the other packet
+                        }
+                    }
 
-                    //TODO: repeat this function every time we send a packet
                 }
             }
+        }
+    }
+
+    //checks whether the given packet, which has the given busy interval, collides with another packet, from the packets arrived until now
+    //returns true if a collision between the given packet and another packet occurred
+    public boolean isCollidedPacket(Pair<Timestamp, Timestamp> pt, Packet packet)
+    {
+        Timestamp tStart = pt.getKey();
+        Timestamp tEnd = pt.getValue();
+        if(packet.getDst() == p1) //the packet is destined to p1, so we have to compare its busy interval with all of the busy intervals of p2
+        {
+            for (Pair<Timestamp, Timestamp> p2t : busy_intervals_p2.keySet()) {
+                Timestamp t1 = p2t.getKey();
+                Timestamp t2 = p2t.getValue();
+                if ((t1.before(tStart) && (t2.after(tStart) && (t2.before(tEnd)))) ||
+                        (t1.before(tStart) && (tEnd.before(t2))) ||
+                        (tStart.before(t1) && (tEnd.after(t1) && (tEnd.before(t2)))) ||
+                        (tStart.before(t1) && (t2.before(tEnd)))) {
+                    //this packet collides with another one! we have to drop both of the packets :(
+                    return true;
+                }
+            }
+            return false; //no problem found!
+        }
+        else //packet destination is p2, so we have to go over the busy intervals buffer of p1
+        {
+            for (Pair<Timestamp, Timestamp> p1t : busy_intervals_p1.keySet()) {
+                Timestamp t1 = p1t.getKey();
+                Timestamp t2 = p1t.getValue();
+                if ((t1.before(tStart) && (t2.after(tStart) && (t2.before(tEnd)))) ||
+                        (t1.before(tStart) && (tEnd.before(t2))) ||
+                        (tStart.before(t1) && (tEnd.after(t1) && (tEnd.before(t2)))) ||
+                        (tStart.before(t1) && (t2.before(tEnd)))) {
+                    //this packet collides with another one! we have to drop both of the packets :(
+                    return true;
+                }
+            }
+            return false; //no problem found!
         }
     }
 

@@ -415,6 +415,7 @@ public class Device implements InputListener, Runnable, Serializable {
     @Override
     public synchronized boolean InputArrived(Packet packet) {
 
+        //TODO: think if we need to wait the time until it really arrived...
         //Date date = new Date();
         //packet.setArrival_ts(new Timestamp(date.getTime())); //update the packet arrival time because it arrived now
 
