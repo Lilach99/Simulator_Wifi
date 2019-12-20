@@ -36,6 +36,8 @@ public class Medium implements TransmissionListener, Serializable {
     HashMap<Pair<Timestamp, Timestamp>, Packet> busy_intervals_p1; //for each packet destined to p1, it saves the time interval during which the channel is busy from p1's point of view
     HashMap<Pair<Timestamp, Timestamp>, Packet> busy_intervals_p2;//for each packet destined to p2, it saves the time interval during which the channel is busy from p2's point of view
     private int collision_num = 0; //indicated the number of collisions happened so far (since the simulation of communication began)
+    Cleanup cleanup_service;
+    Thread cleanup_thread;
 
     public Medium(Device p1, Device p2, int wifi_chan_num, double rate, double distance, double packet_loss_per, Standard standard, Network net) {
         this.p1 = p1;
@@ -49,6 +51,9 @@ public class Medium implements TransmissionListener, Serializable {
         busy_intervals_p1 = new HashMap<>();
         busy_intervals_p2 = new HashMap<>();
         prop_delay = distance / C_AIR; //the propagation delay of the channel, will be larger as the distance grows
+        cleanup_service = new Cleanup(this);
+        cleanup_thread = new Thread(cleanup_service);
+        cleanup_thread.start();
     }
 
     public Medium(boolean status) {
@@ -274,4 +279,7 @@ public class Medium implements TransmissionListener, Serializable {
         this.status = status;
     }
 
+    public void stop() {
+        this.cleanup_service.stop();
+    }
 }

@@ -47,6 +47,7 @@ public class Device implements InputListener, Runnable, Serializable {
     private HashMap<Device, TransmissionListener> listeners = new HashMap<>(); //for channel listeners
     long timeout; //for "Fast Retransmit and Recovery" mechanism, in milliseconds
     int current_CW;
+    Device destination; //the destination for the packets from this device
     // each connected device is mapped to its corresponding channel
 
     public long getPeriod() {
@@ -63,6 +64,25 @@ public class Device implements InputListener, Runnable, Serializable {
         return listeners;
     }
 
+    public Device(String name, String mac_addr, LinkedList<Double> rates, Standard s_standard, Network net, long timeout, Device destination) {
+        this.name = name;
+        this.MAC_addr = mac_addr;
+        this.rates = rates;
+        this.sup_standard = s_standard;
+        this.connected_devs = new HashMap<>();
+        this.buffer = new PriorityQueue<>();
+        this.ctrl_buffer = new PriorityQueue<>();
+        this.net = net;
+        this.timeout = timeout;
+        this.current_CW = sup_standard.CWmin; //begins from the minimum
+        this.destination = destination;
+
+        //this.input_handling = new Thread(this.input_handler);
+        //input_handling.start();
+
+    }
+
+    //a constructor for devices which do not know their destination yet
     public Device(String name, String mac_addr, LinkedList<Double> rates, Standard s_standard, Network net, long timeout) {
         this.name = name;
         this.MAC_addr = mac_addr;
@@ -78,6 +98,14 @@ public class Device implements InputListener, Runnable, Serializable {
         //this.input_handling = new Thread(this.input_handler);
         //input_handling.start();
 
+    }
+
+    public Device getDestination() {
+        return destination;
+    }
+
+    public void setDestination(Device destination) {
+        this.destination = destination;
     }
 
     public String getName() {
@@ -223,15 +251,15 @@ public class Device implements InputListener, Runnable, Serializable {
         //the channel is free! now wait the needed IFS time, depends on the packet type
         double timeToWait = 0;
         Random r = new Random();
-        int backoff = r.nextInt((this.current_CW)+1);
+        int backoff = r.nextInt((this.current_CW) + 1);
         switch (packetToSend.type) {
             case MANAGMENT:
-                timeToWait = this.sup_standard.SIFS_5;
+                timeToWait = this.sup_standard.SIFS_5 + backoff * this.sup_standard.short_slot_time;
                 break;
             case DATA:
-                timeToWait = this.sup_standard.SIFS_5 + 2 * this.sup_standard.short_slot_time; //data packets have to wait DIFS time, which is longer than SIFS
+                timeToWait = this.sup_standard.SIFS_5 + 2 * this.sup_standard.short_slot_time + backoff * this.sup_standard.short_slot_time; //data packets have to wait DIFS time, which is longer than SIFS
             case CONTROL:
-                timeToWait = this.sup_standard.SIFS_5; //control packets wait the smallest IFS
+                timeToWait = this.sup_standard.SIFS_5 + backoff * this.sup_standard.short_slot_time; //control packets wait the smallest IFS
                 break;
             default:
                 break;
@@ -256,12 +284,10 @@ public class Device implements InputListener, Runnable, Serializable {
         }
     }
 
-    public synchronized boolean ackArrived(Packet packet)
-    {
-        for(ControlPacket p : this.ctrl_buffer) //go over ack packets which arrived to this device
+    public synchronized boolean ackArrived(Packet packet) {
+        for (ControlPacket p : this.ctrl_buffer) //go over ack packets which arrived to this device
         {
-            if(p.packet_ack == packet)
-            {
+            if (p.packet_ack == packet) {
                 return true;
             }
         }
@@ -284,8 +310,7 @@ public class Device implements InputListener, Runnable, Serializable {
 
         boolean ackFlag = false; //will be true iff the ack packet of this packet arrived to this device's buffer
         int numRetries = 0; //indicates the number of retransmitting we have done so far regarding to this packet
-        if(packet.need_ack)
-        {
+        if (packet.need_ack) {
             while (ackFlag == false && numRetries < max_retries) //we did not get ack yet and we can still try again
             {
                 //System.out.println("Retry:"+numRetries);
@@ -296,6 +321,10 @@ public class Device implements InputListener, Runnable, Serializable {
                 Date date = new Date();
                 packet.setSending_ts(new Timestamp(date.getTime())); //update the packet arrival time because it arrived now
                 numRetries++; //count this sending try
+                this.current_CW *= 2; //CW increases exponentially with the number of retries
+                if (this.current_CW > this.sup_standard.CWmax) {
+                    this.current_CW = this.sup_standard.CWmax; //the CW side is too big, so we round it to its maximum size
+                }
                 transmissionListener.PacketSent(packet, loss);
 
                 //comStatus = ComStatus.Receiving;
@@ -318,8 +347,7 @@ public class Device implements InputListener, Runnable, Serializable {
                 return false;
             }
 
-        }
-        else { //packet does not need an ack, so we do not have to wait and retry
+        } else { //packet does not need an ack, so we do not have to wait and retry
             while (!CSMAwait(med, packet)) {
                 //wait for the medium + IFS
             }
@@ -390,11 +418,9 @@ public class Device implements InputListener, Runnable, Serializable {
         //Date date = new Date();
         //packet.setArrival_ts(new Timestamp(date.getTime())); //update the packet arrival time because it arrived now
 
-        if(packet.type == PType.CONTROL)
-        {
-            this.ctrl_buffer.add((ControlPacket)packet);
-        }
-        else {
+        if (packet.type == PType.CONTROL) {
+            this.ctrl_buffer.add((ControlPacket) packet);
+        } else {
             this.buffer.add(packet);
         }
         if (packet.type == PType.MANAGMENT) //assume its probe, that's what we have now
@@ -450,8 +476,13 @@ public class Device implements InputListener, Runnable, Serializable {
             //sends packet in the rate of this device, running periodically every second
             Medium devAP = this.connected_devs.get(net.getAP()); //the channel between the device and this device
             exec.scheduleAtFixedRate(() -> {
-
-                //no need of a connector, p2p communication
+                //sends devAPrate packets once a second, the rate is in pps
+                for (int i = 0; i < devAP.rate; i++) {
+                    //no need of a connector, p2p communication
+                    DataPacket p = new DataPacket(this, null, destination, new Standard(Name.N), 5, PType.DATA, "Hello1 :)", true);
+                    this.sendPacket(p, true);
+                }
+                 /*
                 //totally, we are sending devAP.rate bits in a second
                 DataPacket p = new DataPacket(this, null, this.net.getAP(), new Standard(Name.N), (int) devAP.rate / 3, PType.DATA, "Hello1 :)", true);
                 this.sendPacket(p, true); //in data packet we have a chance to packet loss
@@ -459,7 +490,7 @@ public class Device implements InputListener, Runnable, Serializable {
                 this.sendPacket(p, true); //in data packet we have a chance to packet loss
                 p = new DataPacket(this, null, this.net.getAP(), new Standard(Name.N), (int) devAP.rate / 3, PType.DATA, "Hello3 :)", true);
                 this.sendPacket(p, true); //in data packet we have a chance to packet loss
-
+*/
 
             }, 0, 1, TimeUnit.SECONDS);
 

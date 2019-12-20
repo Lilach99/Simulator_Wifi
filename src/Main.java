@@ -34,8 +34,9 @@ public class Main {
         rates.add(2.0);
         stans.add(new Standard(Name.N));
         Network net = new Network("home", "22:55:66:88:77:99", new Standard(Name.N), rates, 2000);
-        Device dev1 = net.createDevice("lilach_phone", "82:11:35:46:FE:19", rates, new Standard(Name.N), 2000);
+        Device dev1 = net.createDevice("lilach_phone", "82:11:35:46:FE:19", rates, new Standard(Name.N), 2000, net.AP);
         net.addDevice(dev1, 0.2);
+        net.AP.setDestination(dev1);
         //Note: there seems to be some bias in the loss percentage from the AP, the device is less likely to get packets
         //that's because the probability that the probability the destination get a packet is (1-plpTo)
         //however, the probability that the source get an ACK on it is (1-plpTo)(1-plpFrom), which is smaller!
@@ -98,6 +99,9 @@ public class Main {
 
     public static void stopSimulate(Network net)
     {
+        for (Medium med : net.getMediums()){
+            med.stop();
+        }
         for (Device dev : net.getDevices()){
             dev.stopSending();
         }

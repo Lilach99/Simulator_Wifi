@@ -61,8 +61,8 @@ public class Network implements Serializable {
         this.ssid = ssid;
     }
 
-    public Device createDevice(String name, String MAC_addr, LinkedList<Double> rates, Standard sup_standard, long timeout) {
-        return new Device(name, MAC_addr, rates, sup_standard, this, timeout);
+    public Device createDevice(String name, String MAC_addr, LinkedList<Double> rates, Standard sup_standard, long timeout, Device destination) {
+        return new Device(name, MAC_addr, rates, sup_standard, this, timeout, destination);
     }
 
     public boolean addDevice(Device dev, double plp){
