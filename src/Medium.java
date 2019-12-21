@@ -119,12 +119,14 @@ public class Medium implements TransmissionListener, Serializable {
 */
         //this.busy = false; //free the medium
 
+
         if (notLost(loss)) { //simulates the packet loss percentage feature
             packet.setArrival_ts(busyEnd); //the packet should arrive to its destination only after the sending time is over
-            if(!isCollidedPacket(new Pair<>(busyStart, busyEnd), packet))
+            if(!isCollidedPacket(new Pair<>(busyStart, busyEnd), packet)) //takes care of collision with previously arrived packets
             {
                 //notify the destination about the packet only of it's not collided
                 dst.InputArrived(packet);
+                //still have to take care of collision with packets which did not arrive yet!
             }
             //collisionDetection(); //check if a collision occurred, and if so, mark the packet as a lost one and only then send it to the destination
             //TODO: think hoe to simulate it right, because the collision detection method is not enough... devices are sending ack even of the packet collided
@@ -173,7 +175,7 @@ public class Medium implements TransmissionListener, Serializable {
         //if we got there, the channel is free!
         return false;
     }
-
+/*
     //virtual, counts the number of collied packets
     //a collision happens when there exist 2 intersected intervals from different buffer in the busy intervals buffers of the endpoints
     public void collisionDetection()
@@ -216,7 +218,7 @@ public class Medium implements TransmissionListener, Serializable {
             }
         }
     }
-
+*/
     //checks whether the given packet, which has the given busy interval, collides with another packet, from the packets arrived until now
     //returns true if a collision between the given packet and another packet occurred
     public boolean isCollidedPacket(Pair<Timestamp, Timestamp> pt, Packet packet)
@@ -233,6 +235,10 @@ public class Medium implements TransmissionListener, Serializable {
                         (tStart.before(t1) && (tEnd.after(t1) && (tEnd.before(t2)))) ||
                         (tStart.before(t1) && (t2.before(tEnd)))) {
                     //this packet collides with another one! we have to drop both of the packets :(
+                    //packet itself will not be send so its OK.
+                    //the second packet - meaning busy_ints_p2.get(p2t) should be marked as "lost"
+                    busy_intervals_p2.get(p2t).Lost();
+                    System.out.println("Collision!");
                     return true;
                 }
             }
@@ -248,6 +254,10 @@ public class Medium implements TransmissionListener, Serializable {
                         (tStart.before(t1) && (tEnd.after(t1) && (tEnd.before(t2)))) ||
                         (tStart.before(t1) && (t2.before(tEnd)))) {
                     //this packet collides with another one! we have to drop both of the packets :(
+                    //packet itself will not be send so its OK.
+                    //the second packet - meaning busy_ints_p1.get(p2t) should be marked as "lost"
+                    busy_intervals_p1.get(p1t).lost = true;
+                    System.out.println("Collision!");
                     return true;
                 }
             }

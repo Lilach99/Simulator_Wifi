@@ -67,7 +67,6 @@ public class Main {
         net.world.put(new Pair<>(dev2, dev1), ch2);
          */
 
-
         //dev2.startSending();
         dev1.startSending();
         Thread.sleep(15000);

@@ -415,10 +415,21 @@ public class Device implements InputListener, Runnable, Serializable {
     @Override
     public synchronized boolean InputArrived(Packet packet) {
 
-        //TODO: think if we need to wait the time until it really arrived...
-        //Date date = new Date();
-        //packet.setArrival_ts(new Timestamp(date.getTime())); //update the packet arrival time because it arrived now
-
+        Timestamp reallyArrived = packet.getArrival_ts(); //the time when the packet really arrived to this device
+        Date date = new Date();
+        Timestamp current = new Timestamp(date.getTime());
+        while (current.before(reallyArrived)) { //the packet did not arrive yet
+            date = new Date();
+            current = new Timestamp(date.getTime());
+            if(packet.lost)
+            {
+                //the collision detector found out that this packet collides with another one, so we stop waiting for the input
+                return false;
+            }
+        }
+        System.out.println(packet.lost);
+        //only now the packet really arrived and not collided or got lost for some other reason
+        //so, we can take care of it, the cleanup service will delete its busy interval from the relevant buffer of the medium
         if (packet.type == PType.CONTROL) {
             this.ctrl_buffer.add((ControlPacket) packet);
         } else {
@@ -449,7 +460,6 @@ public class Device implements InputListener, Runnable, Serializable {
                     break; //do nothing
             }
             System.out.println("A Packet Arrived to device" + this.toString());
-
 
         }
         if (packet.type == PType.DATA) {
