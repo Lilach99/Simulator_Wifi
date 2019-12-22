@@ -245,7 +245,6 @@ public class Device implements InputListener, Runnable, Serializable {
         //first, wait until the medium is free
         while (med.isBusy(this)) {
             //waiting that the channel will be free
-            //TODO: add backoff the DIFS
             System.out.println("I'm waiting");
         }
         //the channel is free! now wait the needed IFS time, depends on the packet type
@@ -325,18 +324,40 @@ public class Device implements InputListener, Runnable, Serializable {
                 if (this.current_CW > this.sup_standard.CWmax) {
                     this.current_CW = this.sup_standard.CWmax; //the CW side is too big, so we round it to its maximum size
                 }
-                transmissionListener.PacketSent(packet, loss);
+                transmissionListener.PacketSent(packet, loss); //the medium enters the sending interval to its buffer (unless the packet got lost due to noise)
 
-                //comStatus = ComStatus.Receiving;
+                Timestamp reallyArrived = packet.getArrival_ts(); //the time when the packet really arrived to the destination device
+                date = new Date();
+                Timestamp current = new Timestamp(date.getTime());
+                while (current.before(reallyArrived)) { //the packet should not arrive yet
+                    date = new Date();
+                    current = new Timestamp(date.getTime());
+                }
+                //now, when the sending interval has ended, we have to check whether the packet collided
+                //all of the packets which arrived "to the medium" until the time this packet arrived, are in the buffers
+                //so, this should work OK I guess:
+                //TODO: insure it works!
+                if(!isCollidedPacket(packet.sending_interval, packet, med))
+                {
+                    med.finishSending(packet); //inform the destination that the packet arrived! because no collision occurred!
+                }
+                //else, the packet collided so we do not inform the destination about it, so ACK would never come
 
                 //open timer, wait for an ack until Timeout expires or ack arrived
-                long end = System.currentTimeMillis() + timeout; //timeout is in milliseconds
-                while (System.currentTimeMillis() < end) {
+                date = new Date();
+                Timestamp currentTs = new Timestamp(date.getTime());
+                Timestamp end = new Timestamp(currentTs.getTime());
+                end.setNanos((int) (currentTs.getNanos() + packet.sending_duration + 1000*timeout)); //timeout is in milliseconds so we multiply by 1000
+                //now the "end" variable contains the timestamp when the timeout expires
+                while (currentTs.before(end)) {
                     if (ackArrived(packet)) {
                         //the ack packet of this packet arrived!
                         ackFlag = true;
                         break;
                     }
+                    //update current timestamp
+                    date = new Date();
+                    currentTs = new Timestamp(date.getTime());
                 }
                 //if we got here with ackFlag == false - the ack did not arrive and the timeout had already expired :(
                 //so we have to retransmit the packet, unless numRetries is still smaller than the maximum allowed
@@ -356,6 +377,21 @@ public class Device implements InputListener, Runnable, Serializable {
             packet.setSending_ts(new Timestamp(date.getTime())); //update the packet arrival time because it arrived now
             numRetries++; //count this sending try
             transmissionListener.PacketSent(packet, loss); //just send the packet
+            Timestamp reallyArrived = packet.getArrival_ts(); //the time when the packet really arrived to the destination device
+            date = new Date();
+            Timestamp current = new Timestamp(date.getTime());
+            while (current.before(reallyArrived)) { //the packet should not arrive yet
+                date = new Date();
+                current = new Timestamp(date.getTime());
+            }
+            //now, when the sending interval has ended, we have to check whether the packet collided
+            //all of the packets which arrived "to the medium" until the time this packet arrived, are in the buffers
+            //so, this should work OK I guess:
+            //TODO: insure it works!
+            if(!isCollidedPacket(packet.sending_interval, packet, med))
+            {
+                med.finishSending(packet); //inform the destination that the packet arrived! because no collision occurred!
+            }
             return true;
         }
 
@@ -414,7 +450,7 @@ public class Device implements InputListener, Runnable, Serializable {
 
     @Override
     public synchronized boolean InputArrived(Packet packet) {
-
+/*
         Timestamp reallyArrived = packet.getArrival_ts(); //the time when the packet really arrived to this device
         Date date = new Date();
         Timestamp current = new Timestamp(date.getTime());
@@ -428,6 +464,7 @@ public class Device implements InputListener, Runnable, Serializable {
             }
         }
         System.out.println(packet.lost);
+        */
         //only now the packet really arrived and not collided or got lost for some other reason
         //so, we can take care of it, the cleanup service will delete its busy interval from the relevant buffer of the medium
         if (packet.type == PType.CONTROL) {
@@ -505,6 +542,50 @@ public class Device implements InputListener, Runnable, Serializable {
 
             }, 0, 1, TimeUnit.SECONDS);
 
+        }
+    }
+
+    //checks whether the given packet, which has the given busy interval, collides with another packet, from the packets arrived until now
+    //returns true if a collision between the given packet and another packet occurred
+    public boolean isCollidedPacket(Pair<Timestamp, Timestamp> pt, Packet packet, Medium med) {
+        Timestamp tStart = pt.getKey();
+        Timestamp tEnd = pt.getValue();
+        if (packet.getDst() == med.p1) //the packet is destined to p1, so we have to compare its busy interval with all of the busy intervals of p2
+        {
+            for (Pair<Timestamp, Timestamp> p2t : med.busy_intervals_p2.keySet()) {
+                Timestamp t1 = p2t.getKey();
+                Timestamp t2 = p2t.getValue();
+                if ((t1.before(tStart) && (t2.after(tStart) && (t2.before(tEnd)))) ||
+                        (t1.before(tStart) && (tEnd.before(t2))) ||
+                        (tStart.before(t1) && (tEnd.after(t1) && (tEnd.before(t2)))) ||
+                        (tStart.before(t1) && (t2.before(tEnd)))) {
+                    //this packet collides with another one! we have to drop both of the packets :(
+                    //packet itself will not be send so its OK.
+                    //the second packet - meaning busy_ints_p2.get(p2t) should be marked as "lost"
+                    med.busy_intervals_p2.get(p2t).Lost();
+                    System.out.println("Collision!");
+                    return true;
+                }
+            }
+            return false; //no problem found!
+        } else //packet destination is p2, so we have to go over the busy intervals buffer of p1
+        {
+            for (Pair<Timestamp, Timestamp> p1t : med.busy_intervals_p1.keySet()) {
+                Timestamp t1 = p1t.getKey();
+                Timestamp t2 = p1t.getValue();
+                if ((t1.before(tStart) && (t2.after(tStart) && (t2.before(tEnd)))) ||
+                        (t1.before(tStart) && (tEnd.before(t2))) ||
+                        (tStart.before(t1) && (tEnd.after(t1) && (tEnd.before(t2)))) ||
+                        (tStart.before(t1) && (t2.before(tEnd)))) {
+                    //this packet collides with another one! we have to drop both of the packets :(
+                    //packet itself will not be send so its OK.
+                    //the second packet - meaning busy_ints_p1.get(p2t) should be marked as "lost"
+                    med.busy_intervals_p1.get(p1t).lost = true;
+                    System.out.println("Collision!");
+                    return true;
+                }
+            }
+            return false; //no problem found!
         }
     }
 

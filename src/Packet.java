@@ -1,3 +1,5 @@
+import javafx.util.Pair;
+
 import java.io.Serializable;
 import java.sql.Timestamp;
 import java.util.Date;
@@ -22,6 +24,8 @@ public class Packet implements Comparable<Packet>, Serializable {
     boolean need_ack;
     String payload;
     boolean lost; //identifies whether the packet got lost in her way to the destination (due to collision, noise, etc.)
+    int sending_duration; //contains the propagation delay (air-light-speed) and the transmitting duration (depends on the packet length)
+    Pair<Timestamp, Timestamp> sending_interval;
 
     public Packet(Device src, Device connector, Device dst, Standard standard, int lenght, PType type, boolean need_ack) {
         Date date = new Date();

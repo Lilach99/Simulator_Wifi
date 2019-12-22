@@ -1,4 +1,5 @@
 import javafx.util.Pair;
+import javafx.util.converter.TimeStringConverter;
 
 import java.io.Serializable;
 import java.sql.Timestamp;
@@ -24,7 +25,7 @@ public class Medium implements TransmissionListener, Serializable {
 
     int wifi_chan_num; //between 1-14
     double rate; //in bps - bits per second - only represents the packets sending rate between the devices, has nothing to do with the medium
-    double sending_rate = 2*Math.pow(10, 6); //in bps - the sending rate of the "medium" (2Mbps for now)
+    double sending_rate = 2 * Math.pow(10, 6); //in bps - the sending rate of the "medium" (2Mbps for now)
     double distance;
     double packet_loss_per;
     double prop_delay;
@@ -83,45 +84,26 @@ public class Medium implements TransmissionListener, Serializable {
         Timestamp original = packet.getTs();
         Timestamp busyStart = new Timestamp(original.getTime());
         busyStart.setNanos(original.getNanos());
-        busyStart.setNanos(busyStart.getNanos() + (int)(prop_delay * Math.pow(10, 9)));
+        busyStart.setNanos(busyStart.getNanos() + (int) (prop_delay * Math.pow(10, 9)));
         Timestamp busyEnd = new Timestamp(busyStart.getTime());
         busyEnd.setNanos(busyStart.getNanos());
-        busyEnd.setNanos(busyEnd.getNanos() + (int)((packet.getLength()/sending_rate)*Math.pow(10, 9))); //the sending time is the packet length in its divided by the sending rate
+        busyEnd.setNanos(busyEnd.getNanos() + (int) ((packet.getLength() / sending_rate) * Math.pow(10, 9))); //the sending time is the packet length in its divided by the sending rate
 
+        Pair<Timestamp, Timestamp> busy_interval = new Pair<>(busyStart, busyEnd);
         if (dst == p1) //the packet is destined to p1
         {
-            busy_intervals_p1.put(new Pair<>(busyStart, busyEnd), packet);
+            busy_intervals_p1.put(busy_interval, packet);
         }
         if (dst == p2) //the packet is destined to p2
         {
-            busy_intervals_p2.put(new Pair<>(busyStart, busyEnd), packet);
+            busy_intervals_p2.put(busy_interval, packet);
         }
-
-        //this.busy = true; //the medium is busy
-
-        //propagation time + packet length - only after that the packet arrives to its destination
-/*
-        try {
-            TimeUnit.SECONDS.sleep((long) ((this.distance / C_AIR) + packet.getLength()/sending_rate)); //channel is propagating the packet
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-
-        //the busy interval got to its end, so we remove it from the DS of busy intervals
-        if (dst == p1) //the packet was destined to p1
-        {
-            busy_intervals_p1.remove(packet);
-        }
-        if (dst == p2) //the packet was destined to p2
-        {
-            busy_intervals_p2.remove(packet);
-        }
-*/
-        //this.busy = false; //free the medium
-
-
+        packet.sending_duration = (int)(prop_delay * Math.pow(10, 9) + (packet.getLength() / sending_rate) * Math.pow(10, 9)); //the transmitting duration, in nanoseconds
+        packet.sending_interval = busy_interval;
         if (notLost(loss)) { //simulates the packet loss percentage feature
             packet.setArrival_ts(busyEnd); //the packet should arrive to its destination only after the sending time is over
+
+            /*
             if(!isCollidedPacket(new Pair<>(busyStart, busyEnd), packet)) //takes care of collision with previously arrived packets
             {
                 //notify the destination about the packet only of it's not collided
@@ -129,10 +111,27 @@ public class Medium implements TransmissionListener, Serializable {
                 //still have to take care of collision with packets which did not arrive yet!
             }
             //collisionDetection(); //check if a collision occurred, and if so, mark the packet as a lost one and only then send it to the destination
-            //TODO: think hoe to simulate it right, because the collision detection method is not enough... devices are sending ack even of the packet collided
+            //TODO: think how to simulate it right, because the collision detection method is not enough... devices are sending ack even of the packet collided
+        */
+        } else {
+            packet.Lost(); //packet got lost due to the medium noise!
         }
-        else packet.Lost(); //packet got lost due to the medium noise
         return true; //we finished the sending procedure
+    }
+
+    //finishes the sending procedure, by informing the destination about the sent packet
+    public synchronized boolean finishSending(Packet packet) {
+        Device src = packet.getSrc();
+        Device dst = packet.getDst();
+
+        //check that source and destination are OK
+        if ((src != p1 && src != p2) || (dst != p1 && dst != p2)) //an error occurred in the endpoints
+        {
+            System.out.println("Endpoints error!");
+            return false;
+        }
+        dst.InputArrived(packet); //inform the destination about the packet which has been sent
+        return true;
     }
 
     public synchronized boolean notLost(boolean loss) { //returns TRUE if the medium did not lose the packet
@@ -175,57 +174,57 @@ public class Medium implements TransmissionListener, Serializable {
         //if we got there, the channel is free!
         return false;
     }
-/*
-    //virtual, counts the number of collied packets
-    //a collision happens when there exist 2 intersected intervals from different buffer in the busy intervals buffers of the endpoints
-    public void collisionDetection()
-    {
-        for (Pair<Timestamp, Timestamp> p1t : busy_intervals_p1.keySet())
-        {
-            for(Pair<Timestamp, Timestamp> p2t : busy_intervals_p2.keySet())
-            {
-                Timestamp t1 = p1t.getKey();
-                Timestamp t2 = p1t.getValue();
-                Timestamp t3 = p2t.getKey();
-                Timestamp t4 = p2t.getValue();
-                if((t1.before(t3) && (t2.after(t3) && (t2.before(t4)))) ||
-                        (t1.before(t3) && (t4.before(t2)))||
-                        (t3.before(t1) && (t4.after(t1) && (t4.before(t2))))||
-                        (t3.before(t1) && (t2.before(t4))))
-                {
-                    //the intervals [t1, t2] and [t3, t4] intersects and they belong to different buffers!
-                    //collision occurred!
-                    collision_num ++;
-                    //lose both the packets, meaning mark them as lost ones
-                    Packet p1 = busy_intervals_p1.get(p1t);
-                    Packet p2 = busy_intervals_p2.get(p2t);
-                    p1.Lost();
-                    p2.Lost();
-                    for (ControlPacket p : p1.getDst().ctrl_buffer) //go over ack packets which arrived to this device
-                    {
-                        if (p.packet_ack == p1) {
-                            p1.getDst().ctrl_buffer.remove(p); //take the ack packet on the collided packet out of the buffer, because ot did not really arrived
-                        }
-                    }
-                    for (ControlPacket p : p2.getDst().ctrl_buffer) //go over ack packets which arrived to this device
-                    {
-                        if (p.packet_ack == p2) {
-                            p2.getDst().ctrl_buffer.remove(p); //same for the other packet
-                        }
-                    }
 
+    /*
+        //virtual, counts the number of collied packets
+        //a collision happens when there exist 2 intersected intervals from different buffer in the busy intervals buffers of the endpoints
+        public void collisionDetection()
+        {
+            for (Pair<Timestamp, Timestamp> p1t : busy_intervals_p1.keySet())
+            {
+                for(Pair<Timestamp, Timestamp> p2t : busy_intervals_p2.keySet())
+                {
+                    Timestamp t1 = p1t.getKey();
+                    Timestamp t2 = p1t.getValue();
+                    Timestamp t3 = p2t.getKey();
+                    Timestamp t4 = p2t.getValue();
+                    if((t1.before(t3) && (t2.after(t3) && (t2.before(t4)))) ||
+                            (t1.before(t3) && (t4.before(t2)))||
+                            (t3.before(t1) && (t4.after(t1) && (t4.before(t2))))||
+                            (t3.before(t1) && (t2.before(t4))))
+                    {
+                        //the intervals [t1, t2] and [t3, t4] intersects and they belong to different buffers!
+                        //collision occurred!
+                        collision_num ++;
+                        //lose both the packets, meaning mark them as lost ones
+                        Packet p1 = busy_intervals_p1.get(p1t);
+                        Packet p2 = busy_intervals_p2.get(p2t);
+                        p1.Lost();
+                        p2.Lost();
+                        for (ControlPacket p : p1.getDst().ctrl_buffer) //go over ack packets which arrived to this device
+                        {
+                            if (p.packet_ack == p1) {
+                                p1.getDst().ctrl_buffer.remove(p); //take the ack packet on the collided packet out of the buffer, because ot did not really arrived
+                            }
+                        }
+                        for (ControlPacket p : p2.getDst().ctrl_buffer) //go over ack packets which arrived to this device
+                        {
+                            if (p.packet_ack == p2) {
+                                p2.getDst().ctrl_buffer.remove(p); //same for the other packet
+                            }
+                        }
+
+                    }
                 }
             }
         }
-    }
-*/
+    */
     //checks whether the given packet, which has the given busy interval, collides with another packet, from the packets arrived until now
     //returns true if a collision between the given packet and another packet occurred
-    public boolean isCollidedPacket(Pair<Timestamp, Timestamp> pt, Packet packet)
-    {
+    public boolean isCollidedPacket(Pair<Timestamp, Timestamp> pt, Packet packet) {
         Timestamp tStart = pt.getKey();
         Timestamp tEnd = pt.getValue();
-        if(packet.getDst() == p1) //the packet is destined to p1, so we have to compare its busy interval with all of the busy intervals of p2
+        if (packet.getDst() == p1) //the packet is destined to p1, so we have to compare its busy interval with all of the busy intervals of p2
         {
             for (Pair<Timestamp, Timestamp> p2t : busy_intervals_p2.keySet()) {
                 Timestamp t1 = p2t.getKey();
@@ -243,8 +242,7 @@ public class Medium implements TransmissionListener, Serializable {
                 }
             }
             return false; //no problem found!
-        }
-        else //packet destination is p2, so we have to go over the busy intervals buffer of p1
+        } else //packet destination is p2, so we have to go over the busy intervals buffer of p1
         {
             for (Pair<Timestamp, Timestamp> p1t : busy_intervals_p1.keySet()) {
                 Timestamp t1 = p1t.getKey();
