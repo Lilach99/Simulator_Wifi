@@ -19,8 +19,8 @@ public class Main {
         Network net = simulate();
         //Thread.sleep(20000);
         stopSimulate(net);
-        System.out.println("AP got: "+net.AP.buffer.size());
-        System.out.println("The station got: "+ net.devices.getFirst().buffer.size());
+        System.out.println("AP got: "+ (net.AP.buffer.size()+net.AP.ctrl_buffer.size()));
+        System.out.println("The station got: "+ (net.devices.getFirst().buffer.size()+net.devices.getFirst().ctrl_buffer.size()));
         writePackets(net.devices.getFirst());
         writePackets(net.AP);
 
@@ -33,9 +33,10 @@ public class Main {
         rates.add(2.0);
         rates.add(2.0);
         stans.add(new Standard(Name.N));
-        Network net = new Network("home", "22:55:66:88:77:99", new Standard(Name.N), rates, 2000);
-        Device dev1 = net.createDevice("lilach_phone", "82:11:35:46:FE:19", rates, new Standard(Name.N), 2000, net.AP);
-        net.addDevice(dev1, 0.2);
+        //reasonable timeout would be ~ packet_sending_duration+ack_sending_duration ~ 200,000+50,000
+        Network net = new Network("home", "22:55:66:88:77:99", new Standard(Name.N), rates, 250000);
+        Device dev1 = net.createDevice("lilach_phone", "82:11:35:46:FE:19", rates, new Standard(Name.N), 250000, net.AP);
+        net.addDevice(dev1, 0.5);
         net.AP.setDestination(dev1);
         //Note: there seems to be some bias in the loss percentage from the AP, the device is less likely to get packets
         //that's because the probability that the probability the destination get a packet is (1-plpTo)
@@ -75,6 +76,8 @@ public class Main {
         net.AP.startSending();
         Thread.sleep(15000);
         net.AP.stopSending();
+
+
 
 
 
@@ -125,6 +128,10 @@ public class Main {
             Writer file = new FileWriter("C:\\Users\\Home\\.IntelliJIdea2019.2\\Projects\\OutputPackets\\"+dev.toString());
             while (!dev.getBuffer().isEmpty()){
                 String json = gson.toJson(dev.getBuffer().remove());
+                file.write(json);
+            }
+            while (!dev.ctrl_buffer.isEmpty()){
+                String json = gson.toJson(dev.ctrl_buffer.remove());
                 file.write(json);
             }
             file.flush();

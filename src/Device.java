@@ -45,7 +45,7 @@ public class Device implements InputListener, Runnable, Serializable {
     ScheduledExecutorService exec;
 
     private HashMap<Device, TransmissionListener> listeners = new HashMap<>(); //for channel listeners
-    long timeout; //for "Fast Retransmit and Recovery" mechanism, in milliseconds
+    long timeout; //for "Fast Retransmit and Recovery" mechanism, in nanoseconds
     int current_CW;
     Device destination; //the destination for the packets from this device
     // each connected device is mapped to its corresponding channel
@@ -257,6 +257,7 @@ public class Device implements InputListener, Runnable, Serializable {
                 break;
             case DATA:
                 timeToWait = this.sup_standard.SIFS_5 + 2 * this.sup_standard.short_slot_time + backoff * this.sup_standard.short_slot_time; //data packets have to wait DIFS time, which is longer than SIFS
+                break;
             case CONTROL:
                 timeToWait = this.sup_standard.SIFS_5 + backoff * this.sup_standard.short_slot_time; //control packets wait the smallest IFS
                 break;
@@ -269,7 +270,7 @@ public class Device implements InputListener, Runnable, Serializable {
         long end = System.currentTimeMillis() + (long) timeToWait / 1000; //timeToWait is in microseconds, so we have to divide it by 1000 to cast it to milliseconds!
         while (System.currentTimeMillis() < end) {
             if (med.isBusy(this)) {
-                //the medium turned into a busy one!
+                //the medium became busy!
                 busyFlag = true;
                 break;
             }
@@ -310,8 +311,10 @@ public class Device implements InputListener, Runnable, Serializable {
         boolean ackFlag = false; //will be true iff the ack packet of this packet arrived to this device's buffer
         int numRetries = 0; //indicates the number of retransmitting we have done so far regarding to this packet
         if (packet.need_ack) {
+            this.current_CW /= 2; //at the first try we do not have to increase it
             while (ackFlag == false && numRetries < max_retries) //we did not get ack yet and we can still try again
             {
+                this.current_CW*=2; //CW increases exponentially with the number of retrie
                 //System.out.println("Retry:"+numRetries);
                 while (!CSMAwait(med, packet)) {
                     //wait for the medium + IFS
@@ -320,7 +323,6 @@ public class Device implements InputListener, Runnable, Serializable {
                 Date date = new Date();
                 packet.setSending_ts(new Timestamp(date.getTime())); //update the packet arrival time because it arrived now
                 numRetries++; //count this sending try
-                this.current_CW *= 2; //CW increases exponentially with the number of retries
                 if (this.current_CW > this.sup_standard.CWmax) {
                     this.current_CW = this.sup_standard.CWmax; //the CW side is too big, so we round it to its maximum size
                 }
@@ -333,12 +335,14 @@ public class Device implements InputListener, Runnable, Serializable {
                     date = new Date();
                     current = new Timestamp(date.getTime());
                 }
+
                 //now, when the sending interval has ended, we have to check whether the packet collided
                 //all of the packets which arrived "to the medium" until the time this packet arrived, are in the buffers
                 //so, this should work OK I guess:
                 //TODO: insure it works!
-                if(!isCollidedPacket(packet.sending_interval, packet, med))
+                if(!isCollidedPacket(packet.sending_interval, packet, med) && !packet.lost)
                 {
+                    //the packet did not collide and did not got lost!
                     med.finishSending(packet); //inform the destination that the packet arrived! because no collision occurred!
                 }
                 //else, the packet collided so we do not inform the destination about it, so ACK would never come
@@ -347,8 +351,7 @@ public class Device implements InputListener, Runnable, Serializable {
                 date = new Date();
                 Timestamp currentTs = new Timestamp(date.getTime());
                 Timestamp end = new Timestamp(currentTs.getTime());
-                end.setNanos((int) (currentTs.getNanos() + packet.sending_duration + 1000*timeout)); //timeout is in milliseconds so we multiply by 1000
-                //now the "end" variable contains the timestamp when the timeout expires
+                end.setNanos((int) (currentTs.getNanos() - packet.sending_duration + timeout)); //timeout is in nanoseconds                //now the "end" variable contains the timestamp when the timeout expires
                 while (currentTs.before(end)) {
                     if (ackArrived(packet)) {
                         //the ack packet of this packet arrived!
@@ -368,14 +371,14 @@ public class Device implements InputListener, Runnable, Serializable {
                 return false;
             }
 
-        } else { //packet does not need an ack, so we do not have to wait and retry
+        }
+        else { //packet does not need an ack, so we do not have to wait and retry
             while (!CSMAwait(med, packet)) {
                 //wait for the medium + IFS
             }
             //now the medium is really free for sending the packet
             Date date = new Date();
             packet.setSending_ts(new Timestamp(date.getTime())); //update the packet arrival time because it arrived now
-            numRetries++; //count this sending try
             transmissionListener.PacketSent(packet, loss); //just send the packet
             Timestamp reallyArrived = packet.getArrival_ts(); //the time when the packet really arrived to the destination device
             date = new Date();
@@ -388,7 +391,7 @@ public class Device implements InputListener, Runnable, Serializable {
             //all of the packets which arrived "to the medium" until the time this packet arrived, are in the buffers
             //so, this should work OK I guess:
             //TODO: insure it works!
-            if(!isCollidedPacket(packet.sending_interval, packet, med))
+            if(!isCollidedPacket(packet.sending_interval, packet, med) && !packet.lost)
             {
                 med.finishSending(packet); //inform the destination that the packet arrived! because no collision occurred!
             }
@@ -500,8 +503,8 @@ public class Device implements InputListener, Runnable, Serializable {
 
         }
         if (packet.type == PType.DATA) {
-            //we have to ack it!
-            sendACK(packet);
+            //maybe we have to ack it!
+            if(packet.need_ack) sendACK(packet);
             System.out.println("A Packet Arrived to device" + this.toString());
 
         }
@@ -527,7 +530,7 @@ public class Device implements InputListener, Runnable, Serializable {
                 //sends devAPrate packets once a second, the rate is in pps
                 for (int i = 0; i < devAP.rate; i++) {
                     //no need of a connector, p2p communication
-                    DataPacket p = new DataPacket(this, null, destination, new Standard(Name.N), 5, PType.DATA, "Hello1 :)", true);
+                    DataPacket p = new DataPacket(this, null, destination, new Standard(Name.N), 100, PType.DATA, "Hello1 :)", true);
                     this.sendPacket(p, true);
                 }
                  /*

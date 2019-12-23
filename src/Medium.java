@@ -88,6 +88,7 @@ public class Medium implements TransmissionListener, Serializable {
         Timestamp busyEnd = new Timestamp(busyStart.getTime());
         busyEnd.setNanos(busyStart.getNanos());
         busyEnd.setNanos(busyEnd.getNanos() + (int) ((packet.getLength() / sending_rate) * Math.pow(10, 9))); //the sending time is the packet length in its divided by the sending rate
+        //packet length - in bits, sending rate - in bits per second
 
         Pair<Timestamp, Timestamp> busy_interval = new Pair<>(busyStart, busyEnd);
         if (dst == p1) //the packet is destined to p1
@@ -98,10 +99,12 @@ public class Medium implements TransmissionListener, Serializable {
         {
             busy_intervals_p2.put(busy_interval, packet);
         }
+        //sending duration in nanoseconds
         packet.sending_duration = (int)(prop_delay * Math.pow(10, 9) + (packet.getLength() / sending_rate) * Math.pow(10, 9)); //the transmitting duration, in nanoseconds
         packet.sending_interval = busy_interval;
-        if (notLost(loss)) { //simulates the packet loss percentage feature
-            packet.setArrival_ts(busyEnd); //the packet should arrive to its destination only after the sending time is over
+        packet.setArrival_ts(busyEnd); //the packet should arrive to its destination only after the sending time is over
+        if (!notLost(loss)) { //simulates the packet loss percentage feature
+            packet.Lost(); //packet got lost due to the medium noise!
 
             /*
             if(!isCollidedPacket(new Pair<>(busyStart, busyEnd), packet)) //takes care of collision with previously arrived packets
@@ -113,9 +116,9 @@ public class Medium implements TransmissionListener, Serializable {
             //collisionDetection(); //check if a collision occurred, and if so, mark the packet as a lost one and only then send it to the destination
             //TODO: think how to simulate it right, because the collision detection method is not enough... devices are sending ack even of the packet collided
         */
-        } else {
-            packet.Lost(); //packet got lost due to the medium noise!
         }
+
+
         return true; //we finished the sending procedure
     }
 
