@@ -546,7 +546,7 @@ public class Device implements InputListener, Runnable, Serializable {
     @Override
     public void run() {
 
-            //sends packet in the rate of this device, running periodically every second
+            //sends packet in the rate of the device, running periodically every second
             int numSent = 0; //counter for the number of packets we have sent so far
             while (!this.sending_buffer.isEmpty() && !exit) //we have'nt finished sending yet
             {
