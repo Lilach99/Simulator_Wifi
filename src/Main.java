@@ -36,7 +36,7 @@ public class Main {
         //reasonable timeout would be ~ packet_sending_duration+ack_sending_duration ~ 200,000+50,000
         Network net = new Network("home", "22:55:66:88:77:99", new Standard(Name.N), rates, 250000);
         Device dev1 = net.createDevice("lilach_phone", "82:11:35:46:FE:19", rates, new Standard(Name.N), 250000, net.AP);
-        net.addDevice(dev1, 0.5);
+        net.addDevice(dev1, 0);
         net.AP.setDestination(dev1);
         //Note: there seems to be some bias in the loss percentage from the AP, the device is less likely to get packets
         //that's because the probability that the probability the destination get a packet is (1-plpTo)
@@ -69,6 +69,7 @@ public class Main {
          */
 
         //dev2.startSending();
+/*
         dev1.startSending();
         Thread.sleep(15000);
         dev1.stopSending();
@@ -77,7 +78,15 @@ public class Main {
         Thread.sleep(15000);
         net.AP.stopSending();
 
+*/
 
+
+        dev1.startSending();
+        //Thread.sleep(5000);
+        net.AP.startSending();
+        Thread.sleep(30000);
+        dev1.stopSending();
+        net.AP.stopSending();
 
 
 

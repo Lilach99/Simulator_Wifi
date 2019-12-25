@@ -9,6 +9,14 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+//an enum for the sending status of a packet
+enum StatusCode{
+    INP_ERR, //problematic input parameters
+    BUSY_MED, //we did not succeed due to a busy medium
+    NO_ACK, //ack packet on this packet did not show up (after maxRetries)
+    SUCCESS; //the packet has been sent
+}
+
 enum CtrlType {
     ACK;
 }
@@ -25,8 +33,9 @@ public class Device implements InputListener, Runnable, Serializable {
     HashMap<Device, Medium> connected_devs; //maps a connected device to the channel which connects it to the AP connects it to this device
     LinkedList<Double> rates; //int bps
     Standard sup_standard; //an set of supported standards
-    volatile Queue<Packet> buffer; //for data packets
-    volatile Queue<ControlPacket> ctrl_buffer; //for control packets only
+    volatile Queue<Packet> buffer; //for input data packets
+    volatile Queue<ControlPacket> ctrl_buffer; //for input control packets only
+    volatile Queue<Packet> sending_buffer; //for output packets (the packets we want to send)
     Network net; //for now, assume a device is connected to a single network at a time
     int packet_flag; //will be 1 if there is a ready packet arrives from the channel
     //InputHandler input_handler;
@@ -72,6 +81,7 @@ public class Device implements InputListener, Runnable, Serializable {
         this.connected_devs = new HashMap<>();
         this.buffer = new PriorityQueue<>();
         this.ctrl_buffer = new PriorityQueue<>();
+        this.sending_buffer = new PriorityQueue<>();
         this.net = net;
         this.timeout = timeout;
         this.current_CW = sup_standard.CWmin; //begins from the minimum
@@ -91,6 +101,7 @@ public class Device implements InputListener, Runnable, Serializable {
         this.connected_devs = new HashMap<>();
         this.buffer = new PriorityQueue<>();
         this.ctrl_buffer = new PriorityQueue<>();
+        this.sending_buffer = new PriorityQueue<>();
         this.net = net;
         this.timeout = timeout;
         this.current_CW = sup_standard.CWmin; //begins from the minimum
@@ -240,14 +251,22 @@ public class Device implements InputListener, Runnable, Serializable {
         return true;
     }
 
-    //takes care of the CSMA functionality - wait until the medium is free and then wait the IFS time
+    //takes care of the CSMA functionality - returns false if the medium is NOT free (either if it's already busy, or got busy during the waiting of the IFS time)
     public boolean CSMAwait(Medium med, Packet packetToSend) {
         //first, wait until the medium is free
+        if (med.isBusy(this))
+        {
+            return false; //channel is busy, we should try again later
+        }
+        //TODO: change it so it will work with random backoff waiting time rather than a while loop
+        /*
         while (med.isBusy(this)) {
             //waiting that the channel will be free
-            System.out.println("I'm waiting");
+             System.out.println("I'm waiting");
         }
-        //the channel is free! now wait the needed IFS time, depends on the packet type
+
+         */
+        //the medium is free! now wait the needed IFS time, depends on the packet type
         double timeToWait = 0;
         Random r = new Random();
         int backoff = r.nextInt((this.current_CW) + 1);
@@ -295,7 +314,7 @@ public class Device implements InputListener, Runnable, Serializable {
     }
 
     //packet sending function, returns true iff the packet had successfully been sent, namely the device received ack on it
-    public synchronized boolean sendPacket(Packet packet, boolean loss) {
+    public synchronized StatusCode sendPacket(Packet packet, boolean loss) {
 
         //this.comStatus = ComStatus.Transmitting; //now the device is transmitting data so it cannot receive simultaneously
         Device dst = packet.getDst();
@@ -303,7 +322,7 @@ public class Device implements InputListener, Runnable, Serializable {
         if (med == null) {
             //ch = this.connected_devs.get(this.net.getAP()); //maybe the AP can deliver the packet to its desired destination
             //if(ch==null) //the device is not connected to the AP due to some errors
-            return false;
+            return StatusCode.INP_ERR;
         }
 
         TransmissionListener transmissionListener = this.listeners.get(dst); //get the needed transmission listener
@@ -316,8 +335,9 @@ public class Device implements InputListener, Runnable, Serializable {
             {
                 this.current_CW*=2; //CW increases exponentially with the number of retrie
                 //System.out.println("Retry:"+numRetries);
-                while (!CSMAwait(med, packet)) {
-                    //wait for the medium + IFS
+                if(!CSMAwait(med, packet)) //unfortunately, we cannot start transmission now!
+                {
+                    return StatusCode.BUSY_MED;
                 }
                 //now the medium is really free for sending the packet
                 Date date = new Date();
@@ -368,13 +388,13 @@ public class Device implements InputListener, Runnable, Serializable {
             if (ackFlag == false) {
                 //we did not succeed to send this packet :(
                 //System.out.println("Packet got lost!!!");
-                return false;
+                return StatusCode.NO_ACK;
             }
 
         }
         else { //packet does not need an ack, so we do not have to wait and retry
-            while (!CSMAwait(med, packet)) {
-                //wait for the medium + IFS
+            if (!CSMAwait(med, packet)) {
+                return StatusCode.BUSY_MED;
             }
             //now the medium is really free for sending the packet
             Date date = new Date();
@@ -395,10 +415,10 @@ public class Device implements InputListener, Runnable, Serializable {
             {
                 med.finishSending(packet); //inform the destination that the packet arrived! because no collision occurred!
             }
-            return true;
+            return StatusCode.SUCCESS;
         }
 
-        return true;
+        return StatusCode.SUCCESS;
 
     }
 
@@ -531,7 +551,29 @@ public class Device implements InputListener, Runnable, Serializable {
                 for (int i = 0; i < devAP.rate; i++) {
                     //no need of a connector, p2p communication
                     DataPacket p = new DataPacket(this, null, destination, new Standard(Name.N), 100, PType.DATA, "Hello1 :)", true);
-                    this.sendPacket(p, true);
+                    sending_buffer.add(p);
+                    StatusCode sendingStat = this.sendPacket(p, true);
+                    if(sendingStat==StatusCode.SUCCESS)
+                    {
+                        //sending ends successfully, so we take the packet out of the sending buffer
+                        sending_buffer.remove(p);
+                    }
+                    if(sendingStat==StatusCode.BUSY_MED)
+                    {
+                        //we did not succeed because the medium is busy
+                        //so, pick a random backoff and wait this backoff time, giving the other device a chance to finish its sending process then try again
+                        //only after the backoff time, we should try again
+                        Random r = new Random();
+                        int backoff = r.nextInt((this.current_CW) + 1);
+                        try {
+                            //the casting does not maters, everything is integer anyway...
+                            TimeUnit.MICROSECONDS.sleep((long)this.sup_standard.short_slot_time * backoff);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        this.sendPacket(p, true); //try to send again
+                    }
+
                 }
                  /*
                 //totally, we are sending devAP.rate bits in a second
