@@ -22,6 +22,7 @@ public class Packet implements Comparable<Packet>, Serializable {
     int length; //in bits
     PType type;
     boolean need_ack;
+    int num_retries; //number of times we retransmitted the packet so far, initialized to 0
     String payload;
     boolean lost; //identifies whether the packet got lost in her way to the destination (due to collision, noise, etc.)
     int sending_duration; //contains the propagation delay (air-light-speed) and the transmitting duration (depends on the packet length)
@@ -37,6 +38,7 @@ public class Packet implements Comparable<Packet>, Serializable {
         this.length = lenght;
         this.type = type;
         this.need_ack = need_ack;
+        this.num_retries = 0;
         this.sending_ts = null;
         this.lost = false;
     }
@@ -51,6 +53,7 @@ public class Packet implements Comparable<Packet>, Serializable {
         this.length = lenght;
         this.type = type;
         this.need_ack = need_ack;
+        this.num_retries = 0;
         this.sending_ts = null;
         this.payload = payload;
         this.lost = false;

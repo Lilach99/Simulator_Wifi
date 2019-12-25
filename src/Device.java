@@ -14,7 +14,8 @@ enum StatusCode {
     INP_ERR, //problematic input parameters
     BUSY_MED, //we did not succeed due to a busy medium
     NO_ACK, //ack packet on this packet did not show up (after maxRetries)
-    SUCCESS; //the packet has been sent
+    SUCCESS, //the packet has been sent
+    THROW_PCKT; //the number of packet's retransmissions exceeded the maximum allowed
 }
 
 enum CtrlType {
@@ -332,10 +333,10 @@ public class Device implements InputListener, Runnable, Serializable {
         TransmissionListener transmissionListener = this.listeners.get(dst); //get the needed transmission listener
 
         boolean ackFlag = false; //will be true iff the ack packet of this packet arrived to this device's buffer
-        int numRetries = 0; //indicates the number of retransmitting we have done so far regarding to this packet
         if (packet.need_ack) {
+            if(packet.num_retries > max_retries) return StatusCode.THROW_PCKT;
             this.current_CW /= 2; //at the first try we do not have to increase it
-            while (ackFlag == false && numRetries < max_retries) //we did not get ack yet and we can still try again
+            if (ackFlag == false && packet.num_retries < max_retries) //we did not get ack yet and we can still try again
             {
                 this.current_CW *= 2; //CW increases exponentially with the number of retrie
                 //System.out.println("Retry:"+numRetries);
@@ -346,7 +347,7 @@ public class Device implements InputListener, Runnable, Serializable {
                 //now the medium is really free for sending the packet
                 Date date = new Date();
                 packet.setSending_ts(new Timestamp(date.getTime())); //update the packet arrival time because it arrived now
-                numRetries++; //count this sending try
+                packet.num_retries++; //count this sending try
                 if (this.current_CW > this.sup_standard.CWmax) {
                     this.current_CW = this.sup_standard.CWmax; //the CW side is too big, so we round it to its maximum size
                 }
@@ -544,22 +545,27 @@ public class Device implements InputListener, Runnable, Serializable {
 
     @Override
     public void run() {
-        if (!exit) {
+
             //sends packet in the rate of this device, running periodically every second
             int numSent = 0; //counter for the number of packets we have sent so far
-            while (numSent < this.sending_goal) //we have'nt finished sending yet
+            while (!this.sending_buffer.isEmpty() && !exit) //we have'nt finished sending yet
             {
                 Packet p = this.sending_buffer.remove(); //take the first packet from the priority queue
                 StatusCode sendingStat = this.sendPacket(p, true);
+                System.out.println(sendingStat.toString());
                 if(sendingStat==StatusCode.SUCCESS)
                 {
                     //sending ends successfully, the packet had already taken out from the buffer
                     //we have to count this packet as sent, so increase the counter
                     numSent++;
                 }
-                if(sendingStat==StatusCode.BUSY_MED)
+                else if(sendingStat == StatusCode.THROW_PCKT)
                 {
-                    //we did not succeed because the medium is busy
+                    continue; //the packet has already taken out of the buffer so we just have to continue
+                }
+                else if(sendingStat==StatusCode.BUSY_MED || sendingStat == StatusCode.NO_ACK)
+                {
+                    //we did not succeed because the medium is busy or because the packet got lost somehow
                     //so, pick a random backoff and wait this backoff time, giving the other device a chance to finish its sending process then try again
                     //only after the backoff time, we should try again
                     Random r = new Random();
@@ -621,7 +627,7 @@ public class Device implements InputListener, Runnable, Serializable {
             }, 0, 1, TimeUnit.SECONDS); */
 
         }
-    }
+
 
     //checks whether the given packet, which has the given busy interval, collides with another packet, from the packets arrived until now
     //returns true if a collision between the given packet and another packet occurred

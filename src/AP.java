@@ -24,9 +24,14 @@ public class AP extends Device implements Serializable {
         this.buffers = buffers;
     }
 
+    /*
     @Override
     public void run() {
-        if(!exit) {
+        if (!exit) {
+
+
+
+
             //sends packet in the rate of this device, running periodically every second
             Medium APdev = this.net.world.get(new Pair<>(this.connected_devs.keySet().toArray()[0], this)); //the channel between the device and this device
             exec.scheduleAtFixedRate(() -> {
@@ -61,4 +66,5 @@ public class AP extends Device implements Serializable {
 
         }
     }
+*/
 }

@@ -48,7 +48,7 @@ public class Main {
         //for this reason, setting plpFrom to 0.1 and plpTo to 0.5 make sense
 
         dev1.startSending();
-        //Thread.sleep(5000);
+        Thread.sleep(200);
         net.AP.startSending();
         Thread.sleep(simulationDuration);
         dev1.stopSending();
