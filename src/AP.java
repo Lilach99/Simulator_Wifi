@@ -11,8 +11,8 @@ public class AP extends Device implements Serializable {
 
     HashMap<Device, Queue<Packet>> buffers;
 
-    public AP(String name, String MAC_addr, LinkedList<Double> rates, Standard s_standard, Network net, long timeout) {
-        super(name, MAC_addr, rates, s_standard, net, timeout);
+    public AP(String name, String MAC_addr, LinkedList<Double> rates, Standard s_standard, Network net, long timeout, int working_time) {
+        super(name, MAC_addr, rates, s_standard, net, timeout, working_time);
         this.buffers = new HashMap<>();
     }
 

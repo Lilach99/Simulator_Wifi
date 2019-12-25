@@ -16,12 +16,12 @@ public class Network implements Serializable {
     LinkedList<Medium> mediums;
     Mode mode;
 
-    public Network(String ssid, String MAC, Standard s_standard, LinkedList<Double> rates, long timeout) {
+    public Network(String ssid, String MAC, Standard s_standard, LinkedList<Double> rates, long timeout, int working_time) {
         this.world = new HashMap<>();
         this.mediums = new LinkedList<>();
         this.devices = new LinkedList<>();
         this.ssid = ssid;
-        this.AP = new AP(ssid, MAC, rates, s_standard, this, timeout);
+        this.AP = new AP(ssid, MAC, rates, s_standard, this, timeout, working_time);
         this.mode=Mode.INFRASTRUCTURE; //for now only infrastructure
     }
 
@@ -61,8 +61,8 @@ public class Network implements Serializable {
         this.ssid = ssid;
     }
 
-    public Device createDevice(String name, String MAC_addr, LinkedList<Double> rates, Standard sup_standard, long timeout, Device destination) {
-        return new Device(name, MAC_addr, rates, sup_standard, this, timeout, destination);
+    public Device createDevice(String name, String MAC_addr, LinkedList<Double> rates, Standard sup_standard, long timeout, Device destination, int working_time) {
+        return new Device(name, MAC_addr, rates, sup_standard, this, timeout, destination, working_time);
     }
 
     public boolean addDevice(Device dev, double plp){
@@ -117,6 +117,10 @@ public class Network implements Serializable {
         Collections.sort(lcopy); //if there are more than 1 common supported rates, we pick the largest one
         if(dev1.getSup_standard().getName() == dev2.getSup_standard().getName() && !lcopy.isEmpty()){
             Medium med = new Medium(dev1, dev2, cnum, (Double)lcopy.getLast(), dist, plp, dev1.getSup_standard(), this);
+            //calculate the desired number of packets we want to send for each device
+            //the calculation is done according to the devices' sending rate to the medium rate and the device's working time
+            dev1.sending_goal = (int)(lcopy.getLast() * (dev1.working_time/1000));//rate is in pps (p p seconds) and working time is in milliseonds, so we have to divide it by 10^3
+            dev2.sending_goal = (int)(lcopy.getLast() * (dev2.working_time/1000));//rate is in pps (p p seconds) and working time is in milliseonds, so we have to divide it by 10^3
             return med;
         }
         else{

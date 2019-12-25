@@ -16,7 +16,8 @@ import java.util.LinkedList;
 public class Main {
 
     public static void main(String[] args) throws Exception {
-        Network net = simulate();
+        int simDur = 30000;
+        Network net = simulate(simDur);
         //Thread.sleep(20000);
         stopSimulate(net);
         System.out.println("AP got: "+ (net.AP.buffer.size()+net.AP.ctrl_buffer.size()));
@@ -26,7 +27,8 @@ public class Main {
 
     }
 
-    public static Network simulate() throws InterruptedException { //testing function, for now running communication from a station (device) and an AP
+    //simulationDuration is in milliseconds
+    public static Network simulate(int simulationDuration) throws InterruptedException { //testing function, for now running communication from a station (device) and an AP
         HashSet<Standard> stans = new HashSet<>();
         LinkedList<Double> rates = new LinkedList<>();
         rates.add(1.0);
@@ -34,16 +36,27 @@ public class Main {
         rates.add(2.0);
         stans.add(new Standard(Name.N));
         //reasonable timeout would be ~ packet_sending_duration+ack_sending_duration ~ 200,000+50,000
-        Network net = new Network("home", "22:55:66:88:77:99", new Standard(Name.N), rates, 250000);
-        Device dev1 = net.createDevice("lilach_phone", "82:11:35:46:FE:19", rates, new Standard(Name.N), 250000, net.AP);
+        Network net = new Network("home", "22:55:66:88:77:99", new Standard(Name.N), rates, 250000, simulationDuration);
+        Device dev1 = net.createDevice("lilach_phone", "82:11:35:46:FE:19", rates, new Standard(Name.N), 250000, net.AP, simulationDuration);
         net.addDevice(dev1, 0);
         net.AP.setDestination(dev1);
+        dev1.preparePackets();
+        net.AP.preparePackets();
         //Note: there seems to be some bias in the loss percentage from the AP, the device is less likely to get packets
         //that's because the probability that the probability the destination get a packet is (1-plpTo)
         //however, the probability that the source get an ACK on it is (1-plpTo)(1-plpFrom), which is smaller!
         //for this reason, setting plpFrom to 0.1 and plpTo to 0.5 make sense
 
-        /*
+        dev1.startSending();
+        //Thread.sleep(5000);
+        net.AP.startSending();
+        Thread.sleep(simulationDuration);
+        dev1.stopSending();
+        net.AP.stopSending();
+
+
+
+         /*
         LinkedList<Double> rates2 = new LinkedList<>();
         rates2.add(1.0);
         rates2.add(2.0);
@@ -79,15 +92,6 @@ public class Main {
         net.AP.stopSending();
 
 */
-
-
-        dev1.startSending();
-        //Thread.sleep(5000);
-        net.AP.startSending();
-        Thread.sleep(30000);
-        dev1.stopSending();
-        net.AP.stopSending();
-
 
 
         /*net.AP.startSending();

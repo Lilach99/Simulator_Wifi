@@ -20,8 +20,8 @@ public class Simulator {
     public Simulator(int numOfPackets, String ssid, String APmacAddr, int APTimeout, LinkedList<Double> rates, String devName, String devMacAddr, int devTimeout) {
         this.numOfPackets = numOfPackets;
         this.rates = rates;
-        this.net = new Network(ssid, APmacAddr, new Standard(Name.N), rates, APTimeout);
-        this.dev = net.createDevice(devName, devMacAddr, rates, new Standard(Name.N), devTimeout, net.AP);
+        this.net = new Network(ssid, APmacAddr, new Standard(Name.N), rates, APTimeout, 30000);
+        this.dev = net.createDevice(devName, devMacAddr, rates, new Standard(Name.N), devTimeout, net.AP, 30000);
         net.AP.setDestination(dev); //the net AP will be sending packets to dev
         this.devSendingTimes = new LinkedList<>();
         this.APSendingTimes = new LinkedList<>();
