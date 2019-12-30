@@ -20,8 +20,10 @@ public class Main {
         Network net = simulate(simDur);
         //Thread.sleep(20000);
         stopSimulate(net);
-        System.out.println("AP got: "+ (net.AP.buffer.size()+net.AP.ctrl_buffer.size()));
-        System.out.println("The station got: "+ (net.devices.getFirst().buffer.size()+net.devices.getFirst().ctrl_buffer.size()));
+        System.out.println("Data AP got: "+ net.AP.buffer.size());
+        System.out.println("Acks AP got:" + +net.AP.ctrl_buffer.size());
+        System.out.println("Data station got: "+ (net.devices.getFirst().buffer.size()));
+        System.out.println("Acks station got:" + net.devices.getFirst().ctrl_buffer.size());
         writePackets(net.devices.getFirst());
         writePackets(net.AP);
 
@@ -48,7 +50,7 @@ public class Main {
         //for this reason, setting plpFrom to 0.1 and plpTo to 0.5 make sense
 
         dev1.startSending();
-        Thread.sleep(200);
+        //Thread.sleep(100);
         net.AP.startSending();
         Thread.sleep(simulationDuration);
         dev1.stopSending();

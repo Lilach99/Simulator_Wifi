@@ -334,68 +334,89 @@ public class Device implements InputListener, Runnable, Serializable {
 
         boolean ackFlag = false; //will be true iff the ack packet of this packet arrived to this device's buffer
         if (packet.need_ack) {
+            //check of we have already sent the packet for the maximum number of times allowed
             if(packet.num_retries > max_retries) return StatusCode.THROW_PCKT;
-            this.current_CW /= 2; //at the first try we do not have to increase it
+            /*this.current_CW /= 2; //at the first try we do not have to increase it
             if (ackFlag == false && packet.num_retries < max_retries) //we did not get ack yet and we can still try again
+            {*/
+            //this.current_CW *= 2; //CW increases exponentially with the number of retries
+            //System.out.println("Retry:"+numRetries);
+
+            //we can still try to send again
+            if (!CSMAwait(med, packet))
             {
-                this.current_CW *= 2; //CW increases exponentially with the number of retrie
-                //System.out.println("Retry:"+numRetries);
-                if (!CSMAwait(med, packet)) //unfortunately, we cannot start transmission now!
-                {
-                    return StatusCode.BUSY_MED;
-                }
-                //now the medium is really free for sending the packet
-                Date date = new Date();
-                packet.setSending_ts(new Timestamp(date.getTime())); //update the packet arrival time because it arrived now
-                packet.num_retries++; //count this sending try
-                if (this.current_CW > this.sup_standard.CWmax) {
-                    this.current_CW = this.sup_standard.CWmax; //the CW side is too big, so we round it to its maximum size
-                }
-                transmissionListener.PacketSent(packet, loss); //the medium enters the sending interval to its buffer (unless the packet got lost due to noise)
-
-                Timestamp reallyArrived = packet.getArrival_ts(); //the time when the packet really arrived to the destination device
-                date = new Date();
-                Timestamp current = new Timestamp(date.getTime());
-                while (current.before(reallyArrived)) { //the packet should not arrive yet
-                    date = new Date();
-                    current = new Timestamp(date.getTime());
-                }
-
-                //now, when the sending interval has ended, we have to check whether the packet collided
-                //all of the packets which arrived "to the medium" until the time this packet arrived, are in the buffers
-                //so, this should work OK I guess:
-                //TODO: insure it works!
-                if (!isCollidedPacket(packet.sending_interval, packet, med) && !packet.lost) {
-                    //the packet did not collide and did not got lost!
-                    med.finishSending(packet); //inform the destination that the packet arrived! because no collision occurred!
-                }
-                //else, the packet collided so we do not inform the destination about it, so ACK would never come
-
-                //open timer, wait for an ack until Timeout expires or ack arrived
-                date = new Date();
-                Timestamp currentTs = new Timestamp(date.getTime());
-                Timestamp end = new Timestamp(currentTs.getTime());
-                end.setNanos((int) (currentTs.getNanos() - packet.sending_duration + timeout)); //timeout is in nanoseconds                //now the "end" variable contains the timestamp when the timeout expires
-                while (currentTs.before(end)) {
-                    if (ackArrived(packet)) {
-                        //the ack packet of this packet arrived!
-                        ackFlag = true;
-                        break;
-                    }
-                    //update current timestamp
-                    date = new Date();
-                    currentTs = new Timestamp(date.getTime());
-                }
-                //if we got here with ackFlag == false - the ack did not arrive and the timeout had already expired :(
-                //so we have to retransmit the packet, unless numRetries is still smaller than the maximum allowed
+                //unfortunately, we cannot start transmission now!
+                return StatusCode.BUSY_MED;
             }
+            System.out.println("after CSMA");
+            //now the medium is really free for sending the packet
+            Date date = new Date();
+            packet.setSending_ts(new Timestamp(date.getTime())); //update the packet arrival time because it arrived now
+            packet.num_retries++; //count this sending try
+            current_CW *= 2; //the CW size increases exponentially with the number of retries
+            if (this.current_CW > this.sup_standard.CWmax) {
+                this.current_CW = this.sup_standard.CWmax; //the CW side is too big, so we round it to its maximum size
+            }
+
+            transmissionListener.PacketSent(packet, loss); //the medium enters the sending interval to its buffer (unless the packet got lost due to noise)
+
+            System.out.println("after transmission 1st part");
+
+            Timestamp reallyArrived = packet.getArrival_ts(); //the time when the packet really arrived to the destination device
+            date = new Date();
+            Timestamp current = new Timestamp(date.getTime());
+            while (current.before(reallyArrived)) { //the packet should not arrive yet
+                date = new Date();
+                current = new Timestamp(date.getTime());
+            }
+
+            //now, when the sending interval has ended, we have to check whether the packet collided
+            //all of the packets which arrived "to the medium" until the time this packet arrived, are in the buffers
+            //so, this should work OK I guess:
+            //TODO: insure it works!
+
+            System.out.println("after waiting prop. time");
+
+            System.out.println("collided? "+isCollidedPacket(packet.sending_interval, packet, med));
+            System.out.println("lost? "+packet.lost);
+
+            if (!isCollidedPacket(packet.sending_interval, packet, med) && !packet.lost) {
+                //the packet did not collide and did not got lost!
+                med.finishSending(packet); //inform the destination that the packet arrived! because no collision occurred!
+            }
+
+            System.out.println("after transmission 2nd part");
+
+            //else, the packet collided so we do not inform the destination about it, so ACK would never come
+
+            //open timer, wait for an ack until Timeout expires or ack arrived
+            date = new Date();
+            Timestamp currentTs = new Timestamp(date.getTime());
+            Timestamp end = new Timestamp(currentTs.getTime());
+            end.setNanos((int) (currentTs.getNanos() - packet.sending_duration + timeout)); //timeout is in nanoseconds                //now the "end" variable contains the timestamp when the timeout expires
+            while (currentTs.before(end)) {
+                if (ackArrived(packet)) {
+                    //the ack packet of this packet arrived!
+                    ackFlag = true;
+                    break;
+                }
+                //update current timestamp
+                date = new Date();
+                currentTs = new Timestamp(date.getTime());
+            }
+            //if we got here with ackFlag == false - the ack did not arrive and the timeout had already expired :(
+            //so we have to retransmit the packet, unless numRetries is still smaller than the maximum allowed
+
+            System.out.println("after waiting for ack");
+
             if (ackFlag == false) {
                 //we did not succeed to send this packet :(
                 //System.out.println("Packet got lost!!!");
                 return StatusCode.NO_ACK;
             }
 
-        } else { //packet does not need an ack, so we do not have to wait and retry
+        }
+        else { //packet does not need an ack, so we do not have to wait and retry
             if (!CSMAwait(med, packet)) {
                 return StatusCode.BUSY_MED;
             }
@@ -475,7 +496,8 @@ public class Device implements InputListener, Runnable, Serializable {
 
     @Override
     public synchronized boolean InputArrived(Packet packet) {
-/*
+        System.out.println("started input arrived");
+        /*
         Timestamp reallyArrived = packet.getArrival_ts(); //the time when the packet really arrived to this device
         Date date = new Date();
         Timestamp current = new Timestamp(date.getTime());
@@ -493,9 +515,13 @@ public class Device implements InputListener, Runnable, Serializable {
         //only now the packet really arrived and not collided or got lost for some other reason
         //so, we can take care of it, the cleanup service will delete its busy interval from the relevant buffer of the medium
         if (packet.type == PType.CONTROL) {
-            this.ctrl_buffer.add((ControlPacket) packet);
+            if(!this.ctrl_buffer.contains((ControlPacket) packet))
+                this.ctrl_buffer.add((ControlPacket) packet);
+            //System.out.println("ACK received by device " + this.toString());
         } else {
-            this.buffer.add(packet);
+            if(!this.buffer.contains(packet))
+                this.buffer.add(packet);
+            //System.out.println("A Packet "+packet.toString()+" Arrived to device" + this.toString());
         }
         if (packet.type == PType.MANAGMENT) //assume its probe, that's what we have now
         {
@@ -521,17 +547,10 @@ public class Device implements InputListener, Runnable, Serializable {
                 default:
                     break; //do nothing
             }
-            System.out.println("A Packet Arrived to device" + this.toString());
-
         }
         if (packet.type == PType.DATA) {
             //maybe we have to ack it!
             if (packet.need_ack) sendACK(packet);
-            System.out.println("A Packet Arrived to device" + this.toString());
-
-        }
-        if (packet.type == PType.CONTROL) {
-            System.out.println("ACK received by device " + this.toString());
         }
         return true;
     }
@@ -545,23 +564,25 @@ public class Device implements InputListener, Runnable, Serializable {
 
     @Override
     public void run() {
-
             //sends packet in the rate of the device, running periodically every second
             int numSent = 0; //counter for the number of packets we have sent so far
             while (!this.sending_buffer.isEmpty() && !exit) //we have'nt finished sending yet
             {
-                Packet p = this.sending_buffer.remove(); //take the first packet from the priority queue
-                StatusCode sendingStat = this.sendPacket(p, true);
+                System.out.println(this.toString()+" sending try");
+                //take the first packet from the priority queue without removing it yet, and try to send it
+                StatusCode sendingStat = this.sendPacket(this.sending_buffer.peek(), true);
                 System.out.println(sendingStat.toString());
+                //System.out.println(sendingStat.toString()+" "+this.sending_buffer.peek().toString());
                 if(sendingStat==StatusCode.SUCCESS)
                 {
-                    //sending ends successfully, the packet had already taken out from the buffer
+                    //sending ends successfully, remove the first packet from the buffer
+                    this.sending_buffer.poll(); //removes the first element from the buffer
                     //we have to count this packet as sent, so increase the counter
                     numSent++;
                 }
                 else if(sendingStat == StatusCode.THROW_PCKT)
                 {
-                    continue; //the packet has already taken out of the buffer so we just have to continue
+                    this.sending_buffer.poll(); //removes the first element from the buffer
                 }
                 else if(sendingStat==StatusCode.BUSY_MED || sendingStat == StatusCode.NO_ACK)
                 {
@@ -576,9 +597,7 @@ public class Device implements InputListener, Runnable, Serializable {
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
-                    sending_buffer.add(p); //we did not succeeded sending p, so we will have to try again later on, so keep it
                 }
-
             }
 
 

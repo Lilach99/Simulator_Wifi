@@ -8,6 +8,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 //a class which simulates the medium between two devices
@@ -36,8 +37,9 @@ public class Medium implements TransmissionListener, Serializable {
 
     ComState comState; //represent the state of connection between the two channel's endpoints
 
-    HashMap<Pair<Timestamp, Timestamp>, Packet> busy_intervals_p1; //for each packet destined to p1, it saves the time interval during which the channel is busy from p1's point of view
-    HashMap<Pair<Timestamp, Timestamp>, Packet> busy_intervals_p2;//for each packet destined to p2, it saves the time interval during which the channel is busy from p2's point of view
+
+    ConcurrentHashMap<Pair<Timestamp, Timestamp>, Packet> busy_intervals_p1; //for each packet destined to p1, it saves the time interval during which the channel is busy from p1's point of view
+    ConcurrentHashMap<Pair<Timestamp, Timestamp>, Packet> busy_intervals_p2;//for each packet destined to p2, it saves the time interval during which the channel is busy from p2's point of view
     private int collision_num = 0; //indicated the number of collisions happened so far (since the simulation of communication began)
     Cleanup cleanup_service;
     Thread cleanup_thread;
@@ -51,8 +53,8 @@ public class Medium implements TransmissionListener, Serializable {
         this.packet_loss_per = packet_loss_per;
         this.standard = standard;
         this.net = net;
-        busy_intervals_p1 = new HashMap<>();
-        busy_intervals_p2 = new HashMap<>();
+        busy_intervals_p1 = new ConcurrentHashMap<>();
+        busy_intervals_p2 = new ConcurrentHashMap<>();
         prop_delay = distance / C_AIR; //the propagation delay of the channel in seconds, will be larger as the distance grows
         cleanup_service = new Cleanup(this);
         cleanup_thread = new Thread(cleanup_service);
@@ -124,6 +126,9 @@ public class Medium implements TransmissionListener, Serializable {
 
     //finishes the sending procedure, by informing the destination about the sent packet
     public synchronized boolean finishSending(Packet packet) {
+
+        System.out.println("started finish sending phase");
+
         Device src = packet.getSrc();
         Device dst = packet.getDst();
 
@@ -133,7 +138,9 @@ public class Medium implements TransmissionListener, Serializable {
             System.out.println("Endpoints error!");
             return false;
         }
+
         dst.InputArrived(packet); //inform the destination about the packet which has been sent
+        System.out.println("input arrived");
         return true;
     }
 
