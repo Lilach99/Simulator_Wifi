@@ -1,42 +1,79 @@
+import javafx.util.Pair;
+
 import java.util.Timer;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public class InputHandler implements Runnable {
+public class InputHandler implements InputListener {
 
     Device dev;
-    ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor();
+
+    public InputHandler(Device dev) {
+        this.dev = dev;
+    }
 
     @Override
-    public void run() {
-        exec.scheduleAtFixedRate(() -> {
-            try {
-                Thread.sleep(1000);
-                //delay of 1 second is needed for it to synchronize correctly with the buffer changes!
-                //the forwardPacketsInRate method take care of this problem by multiplying the sending rate.
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+    public synchronized boolean InputArrived(Packet packet) {
+
+        System.out.println(this.toString()+"started input arrived");
+
+        //only now the packet really arrived and not collided or got lost for some other reason
+        //so, we can take care of it, the cleanup service will delete its busy interval from the relevant buffer of the medium
+        if (packet.type == PType.CONTROL) {
+            if(!dev.ctrl_buffer.contains((ControlPacket) packet))
+                dev.ctrl_buffer.add((ControlPacket) packet);
+            //System.out.println("ACK received by device " + this.toString());
+        } else {
+            if(!dev.buffer.contains(packet))
+                dev.buffer.add(packet);
+            //System.out.println("A Packet "+packet.toString()+" Arrived to device" + this.toString());
+        }
+        if (packet.type == PType.MANAGMENT) //assume its probe, that's what we have now
+        {
+            switch (packet.payload) {
+                case "ProbeReq":
+                    dev.probeResponse(packet);
+                    break;
+                case "ProbeRes":
+                    dev.probe = true;
+                    break;
+                case "AuthReq":
+                    dev.authResponse(packet);
+                    break;
+                case "AuthRes":
+                    dev.auth = true;
+                    break;
+                case "AsscReq":
+                    dev.asscResponse(packet);
+                    break;
+                case "AsscRes":
+                    dev.assc = true;
+                    break;
+                default:
+                    break; //do nothing
             }
-
-            Packet packet = this.dev.removePacketFromBuff(); //removes the top packet from the device's buffer
-                if(packet!=null) {
-                    System.out.println("Packet Really Found!!!");
-                    if(packet.isNeed_ack()) {
-                        //now we have to send an ACK on this packet
-                        ControlPacket ack = new ControlPacket(this.dev, this.dev.net.getAP(), packet.getSrc(), packet.getStandard(), 5, PType.CONTROL, SType.ACK, packet.getTs().toString(), false, packet);
-                        try {
-                            Thread.sleep(100);
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
-                        }
-                        this.dev.sendPacket(ack, true);
-                    }
-                }
-
-                //assume that losing a packet causes drop in the rate -
-                // losing a packet "takes the same time" as sending one
-
-        }, 0, 1, TimeUnit.SECONDS);
+        }
+        if (packet.type == PType.DATA) {
+            //maybe we have to ack it!
+            if (packet.need_ack)
+            {
+                Packet ackPack = prepareACK(packet);
+                dev.sending_buffer.add(ackPack);
+                //dev.sendACK(packet);
+            }
+        }
+        return true;
     }
+
+    public ControlPacket prepareACK(Packet packet) {
+        Device dst = packet.getSrc(); //we are about to answer the probe request sender
+        Medium medForAck = dev.net.getWorld().get(new Pair<>(dst, dev));
+        if (medForAck == null) { //the order was wrong
+            medForAck = dev.net.getWorld().get(new Pair<>(dev, dst));
+        }
+        ControlPacket ack = new ControlPacket(dev, null, dst, medForAck.getStandard(), 5, PType.CONTROL, SType.ACK, "ACK!", false, packet);
+        return ack;
+    }
+
 }

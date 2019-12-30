@@ -139,7 +139,7 @@ public class Medium implements TransmissionListener, Serializable {
             return false;
         }
 
-        dst.InputArrived(packet); //inform the destination about the packet which has been sent
+        dst.input_handler.InputArrived(packet); //inform the destination about the packet which has been sent
         System.out.println("input arrived");
         return true;
     }

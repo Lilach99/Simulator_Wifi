@@ -18,10 +18,6 @@ enum StatusCode {
     THROW_PCKT; //the number of packet's retransmissions exceeded the maximum allowed
 }
 
-enum CtrlType {
-    ACK;
-}
-
 //represents the device communication state - transmitting or receiving
 enum ComStatus {
     Transmitting,
@@ -47,9 +43,10 @@ public class Device implements InputListener, Runnable, Serializable {
     boolean auth = false;
     boolean assc = false;
 
-    int max_retries = 14; //number of times the device retries to send a packet that has not been acked before timeout expired
+    int max_retries = 5; //number of times the device retries to send a packet that has not been acked before timeout expired
 
     Thread send_packets;
+    InputHandler input_handler;
     //Thread handle_input = new Thread(this.input_handler);
     //Thread input_handling;
 
@@ -91,6 +88,7 @@ public class Device implements InputListener, Runnable, Serializable {
         this.current_CW = sup_standard.CWmin; //begins from the minimum
         this.destination = destination;
 
+        this.input_handler = new InputHandler(this);
 
         //this.input_handling = new Thread(this.input_handler);
         //input_handling.start();
@@ -111,6 +109,8 @@ public class Device implements InputListener, Runnable, Serializable {
         this.net = net;
         this.timeout = timeout;
         this.current_CW = sup_standard.CWmin; //begins from the minimum
+
+        this.input_handler = new InputHandler(this);
 
         //this.input_handling = new Thread(this.input_handler);
         //input_handling.start();
@@ -496,7 +496,7 @@ public class Device implements InputListener, Runnable, Serializable {
 
     @Override
     public synchronized boolean InputArrived(Packet packet) {
-        System.out.println("started input arrived");
+        System.out.println(this.toString()+"started input arrived");
         /*
         Timestamp reallyArrived = packet.getArrival_ts(); //the time when the packet really arrived to this device
         Date date = new Date();
