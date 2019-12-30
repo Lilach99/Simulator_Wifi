@@ -16,12 +16,12 @@ public class InputHandler implements InputListener {
     @Override
     public synchronized boolean InputArrived(Packet packet) {
 
-        System.out.println(this.toString()+"started input arrived");
+        //System.out.println(this.toString()+"started input arrived");
 
         //only now the packet really arrived and not collided or got lost for some other reason
         //so, we can take care of it, the cleanup service will delete its busy interval from the relevant buffer of the medium
         if (packet.type == PType.CONTROL) {
-            if(!dev.ctrl_buffer.contains((ControlPacket) packet))
+            if(!isExistAck((ControlPacket)packet))
                 dev.ctrl_buffer.add((ControlPacket) packet);
             //System.out.println("ACK received by device " + this.toString());
         } else {
@@ -74,6 +74,18 @@ public class InputHandler implements InputListener {
         }
         ControlPacket ack = new ControlPacket(dev, null, dst, medForAck.getStandard(), 5, PType.CONTROL, SType.ACK, "ACK!", false, packet);
         return ack;
+    }
+
+    //returns true iff this ack packet is acking an already "ackked" packet
+    public boolean isExistAck(ControlPacket cPack)
+    {
+        for (ControlPacket p : dev.ctrl_buffer) //go over ack packets which arrived to this device
+        {
+            if (cPack.packet_ack == p.packet_ack) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

@@ -127,7 +127,7 @@ public class Medium implements TransmissionListener, Serializable {
     //finishes the sending procedure, by informing the destination about the sent packet
     public synchronized boolean finishSending(Packet packet) {
 
-        System.out.println("started finish sending phase");
+        //System.out.println("started finish sending phase");
 
         Device src = packet.getSrc();
         Device dst = packet.getDst();
@@ -140,7 +140,7 @@ public class Medium implements TransmissionListener, Serializable {
         }
 
         dst.input_handler.InputArrived(packet); //inform the destination about the packet which has been sent
-        System.out.println("input arrived");
+        //System.out.println("input arrived");
         return true;
     }
 

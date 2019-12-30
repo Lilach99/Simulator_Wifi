@@ -40,7 +40,7 @@ public class Main {
         //reasonable timeout would be ~ packet_sending_duration+ack_sending_duration ~ 200,000+50,000
         Network net = new Network("home", "22:55:66:88:77:99", new Standard(Name.N), rates, 250000, simulationDuration);
         Device dev1 = net.createDevice("lilach_phone", "82:11:35:46:FE:19", rates, new Standard(Name.N), 250000, net.AP, simulationDuration);
-        net.addDevice(dev1, 0);
+        net.addDevice(dev1, 0.5);
         net.AP.setDestination(dev1);
         dev1.preparePackets();
         net.AP.preparePackets();

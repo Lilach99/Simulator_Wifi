@@ -43,7 +43,7 @@ public class Device implements InputListener, Runnable, Serializable {
     boolean auth = false;
     boolean assc = false;
 
-    int max_retries = 5; //number of times the device retries to send a packet that has not been acked before timeout expired
+    int max_retries = 1; //number of times the device retries to send a packet that has not been acked before timeout expired
 
     Thread send_packets;
     InputHandler input_handler;
@@ -348,7 +348,7 @@ public class Device implements InputListener, Runnable, Serializable {
                 //unfortunately, we cannot start transmission now!
                 return StatusCode.BUSY_MED;
             }
-            System.out.println("after CSMA");
+            //System.out.println("after CSMA");
             //now the medium is really free for sending the packet
             Date date = new Date();
             packet.setSending_ts(new Timestamp(date.getTime())); //update the packet arrival time because it arrived now
@@ -360,7 +360,7 @@ public class Device implements InputListener, Runnable, Serializable {
 
             transmissionListener.PacketSent(packet, loss); //the medium enters the sending interval to its buffer (unless the packet got lost due to noise)
 
-            System.out.println("after transmission 1st part");
+            //System.out.println("after transmission 1st part");
 
             Timestamp reallyArrived = packet.getArrival_ts(); //the time when the packet really arrived to the destination device
             date = new Date();
@@ -375,17 +375,17 @@ public class Device implements InputListener, Runnable, Serializable {
             //so, this should work OK I guess:
             //TODO: insure it works!
 
-            System.out.println("after waiting prop. time");
+            //System.out.println("after waiting prop. time");
 
-            System.out.println("collided? "+isCollidedPacket(packet.sending_interval, packet, med));
-            System.out.println("lost? "+packet.lost);
+            //System.out.println("collided? "+isCollidedPacket(packet.sending_interval, packet, med));
+            //System.out.println("lost? "+packet.lost);
 
             if (!isCollidedPacket(packet.sending_interval, packet, med) && !packet.lost) {
                 //the packet did not collide and did not got lost!
                 med.finishSending(packet); //inform the destination that the packet arrived! because no collision occurred!
             }
 
-            System.out.println("after transmission 2nd part");
+            //System.out.println("after transmission 2nd part");
 
             //else, the packet collided so we do not inform the destination about it, so ACK would never come
 
@@ -407,7 +407,7 @@ public class Device implements InputListener, Runnable, Serializable {
             //if we got here with ackFlag == false - the ack did not arrive and the timeout had already expired :(
             //so we have to retransmit the packet, unless numRetries is still smaller than the maximum allowed
 
-            System.out.println("after waiting for ack");
+            //System.out.println("after waiting for ack");
 
             if (ackFlag == false) {
                 //we did not succeed to send this packet :(
@@ -496,7 +496,7 @@ public class Device implements InputListener, Runnable, Serializable {
 
     @Override
     public synchronized boolean InputArrived(Packet packet) {
-        System.out.println(this.toString()+"started input arrived");
+        //System.out.println(this.toString()+"started input arrived");
         /*
         Timestamp reallyArrived = packet.getArrival_ts(); //the time when the packet really arrived to this device
         Date date = new Date();

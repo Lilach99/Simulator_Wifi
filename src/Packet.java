@@ -129,7 +129,14 @@ public class Packet implements Comparable<Packet>, Serializable {
 
     @Override
     public int compareTo(Packet o) { //we need that function because we order the packets in a priority queue
-        return this.getTs().compareTo(o.getTs()); //a packet priority is determined by its timestamp
+        if(this.type == PType.CONTROL && o.type == PType.DATA)
+            return -1; //this packet is "more important" than the packet o
+        else if (this.type == PType.DATA && o.type == PType.CONTROL)
+            return 1; //the opposite case
+        else //none or both of the packets are control packets
+        {
+            return this.getTs().compareTo(o.getTs()); //so the packet priority is determined by its timestamp
+        }
     }
 
     public void Lost() { //losing the packet - marking it sa a lost one
