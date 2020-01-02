@@ -43,7 +43,7 @@ public class Device implements InputListener, Runnable, Serializable {
     boolean auth = false;
     boolean assc = false;
 
-    int max_retries = 1; //number of times the device retries to send a packet that has not been acked before timeout expired
+    int max_retries = 14; //number of times the device retries to send a packet that has not been acked before timeout expired
 
     Thread send_packets;
     InputHandler input_handler;
@@ -57,6 +57,7 @@ public class Device implements InputListener, Runnable, Serializable {
     long timeout; //for "Fast Retransmit and Recovery" mechanism, in nanoseconds
     int current_CW;
     Device destination; //the destination for the packets from this device
+    Queue<Packet> lostbuffer; //for lost packets, these are packets we assume did not arrived
     // each connected device is mapped to its corresponding channel
 
     public long getPeriod() {
@@ -81,7 +82,7 @@ public class Device implements InputListener, Runnable, Serializable {
         this.connected_devs = new HashMap<>();
         this.buffer = new PriorityQueue<>();
         this.ctrl_buffer = new PriorityQueue<>();
-        this.sending_buffer = new PriorityQueue<>();
+        this.sending_buffer = new PriorityQueue<Packet>(Packet::compareTo);
         this.working_time = working_time;
         this.net = net;
         this.timeout = timeout;
@@ -89,6 +90,7 @@ public class Device implements InputListener, Runnable, Serializable {
         this.destination = destination;
 
         this.input_handler = new InputHandler(this);
+        this.lostbuffer = new PriorityQueue<>();
 
         //this.input_handling = new Thread(this.input_handler);
         //input_handling.start();
@@ -104,13 +106,16 @@ public class Device implements InputListener, Runnable, Serializable {
         this.connected_devs = new HashMap<>();
         this.buffer = new PriorityQueue<>();
         this.ctrl_buffer = new PriorityQueue<>();
-        this.sending_buffer = new PriorityQueue<>();
+        this.sending_buffer = new PriorityQueue<Packet>(Packet::compareTo);
         this.working_time = working_time;
         this.net = net;
         this.timeout = timeout;
         this.current_CW = sup_standard.CWmin; //begins from the minimum
 
         this.input_handler = new InputHandler(this);
+
+        this.lostbuffer = new PriorityQueue<>();
+
 
         //this.input_handling = new Thread(this.input_handler);
         //input_handling.start();
@@ -263,7 +268,6 @@ public class Device implements InputListener, Runnable, Serializable {
         if (med.isBusy(this)) {
             return false; //channel is busy, we should try again later
         }
-        //TODO: change it so it will work with random backoff waiting time rather than a while loop
         /*
         while (med.isBusy(this)) {
             //waiting that the channel will be free
@@ -335,7 +339,11 @@ public class Device implements InputListener, Runnable, Serializable {
         boolean ackFlag = false; //will be true iff the ack packet of this packet arrived to this device's buffer
         if (packet.need_ack) {
             //check of we have already sent the packet for the maximum number of times allowed
-            if(packet.num_retries > max_retries) return StatusCode.THROW_PCKT;
+            if(packet.num_retries > max_retries)
+            {
+                System.out.println("Throw :(");
+                return StatusCode.THROW_PCKT;
+            }
             /*this.current_CW /= 2; //at the first try we do not have to increase it
             if (ackFlag == false && packet.num_retries < max_retries) //we did not get ack yet and we can still try again
             {*/
@@ -372,8 +380,6 @@ public class Device implements InputListener, Runnable, Serializable {
 
             //now, when the sending interval has ended, we have to check whether the packet collided
             //all of the packets which arrived "to the medium" until the time this packet arrived, are in the buffers
-            //so, this should work OK I guess:
-            //TODO: insure it works!
 
             //System.out.println("after waiting prop. time");
 
@@ -393,7 +399,7 @@ public class Device implements InputListener, Runnable, Serializable {
             date = new Date();
             Timestamp currentTs = new Timestamp(date.getTime());
             Timestamp end = new Timestamp(currentTs.getTime());
-            end.setNanos((int) (currentTs.getNanos() - packet.sending_duration + timeout)); //timeout is in nanoseconds                //now the "end" variable contains the timestamp when the timeout expires
+            end.setNanos((int) (currentTs.getNanos() + timeout)); //timeout is in nanoseconds, we do not have to subtract the packet.sending_duration because it is not included in the timeout                //now the "end" variable contains the timestamp when the timeout expires
             while (currentTs.before(end)) {
                 if (ackArrived(packet)) {
                     //the ack packet of this packet arrived!
@@ -462,17 +468,17 @@ public class Device implements InputListener, Runnable, Serializable {
         while (!probe) {
             //wait...
         }
-        System.out.println("probe done!");
+        //System.out.println("probe done!");
         authReq(this.net.AP);
         while (!auth) {
             //wait...
         }
-        System.out.println("auth done!");
+        //System.out.println("auth done!");
         asscReq(this.net.AP);
         while (!assc) {
             //wait...
         }
-        System.out.println("assc done!");
+        //System.out.println("assc done!");
 
 
         /*if(this.net.addConnection(this, dev, ch)) { //if the adding to the network succeeded
@@ -566,41 +572,64 @@ public class Device implements InputListener, Runnable, Serializable {
     public void run() {
             //sends packet in the rate of the device, running periodically every second
             int numSent = 0; //counter for the number of packets we have sent so far
-            while (!this.sending_buffer.isEmpty() && !exit) //we have'nt finished sending yet
+            while (/*!this.sending_buffer.isEmpty() &&*/ !exit) //we have'nt finished sending yet
             {
-                System.out.println(this.toString()+" sending try");
-                //take the first packet from the priority queue without removing it yet, and try to send it
-                StatusCode sendingStat = this.sendPacket(this.sending_buffer.peek(), true);
-                System.out.println(sendingStat.toString());
-                //System.out.println(sendingStat.toString()+" "+this.sending_buffer.peek().toString());
-                if(sendingStat==StatusCode.SUCCESS)
+                /*
+                if(this.sending_buffer.peek().num_retries == 0)
                 {
-                    //sending ends successfully, remove the first packet from the buffer
-                    this.sending_buffer.poll(); //removes the first element from the buffer
-                    //we have to count this packet as sent, so increase the counter
-                    numSent++;
-                }
-                else if(sendingStat == StatusCode.THROW_PCKT)
-                {
-                    this.sending_buffer.poll(); //removes the first element from the buffer
-                }
-                else if(sendingStat==StatusCode.BUSY_MED || sendingStat == StatusCode.NO_ACK)
-                {
-                    //we did not succeed because the medium is busy or because the packet got lost somehow
-                    //so, pick a random backoff and wait this backoff time, giving the other device a chance to finish its sending process then try again
-                    //only after the backoff time, we should try again
-                    Random r = new Random();
-                    int backoff = r.nextInt((this.current_CW) + 1);
+                    //we are about to start sending a new packet, so wait a little bit to simulate the rate...
                     try {
-                        //the casting does not maters, everything is integer anyway...
-                        TimeUnit.MICROSECONDS.sleep((long)this.sup_standard.short_slot_time * backoff);
+                        TimeUnit.MICROSECONDS.sleep((long)this.sup_standard.long_slot_time * 100);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
                 }
+
+                 */
+                //System.out.println(this.toString()+" sending try");
+                //take the first packet from the priority queue without removing it yet, and try to send it
+                if(!this.sending_buffer.isEmpty()) {
+                    StatusCode sendingStat = this.sendPacket(this.sending_buffer.peek(), true);
+                    //System.out.println(sendingStat.toString());
+                    //System.out.println(sendingStat.toString()+" "+this.sending_buffer.peek().toString());
+                    if (sendingStat == StatusCode.SUCCESS) {
+                        //sending ends successfully, remove the first packet from the buffer
+                        //System.out.println(this.toString()+"sending buffer size:" + this.sending_buffer.size());
+                        if (!this.sending_buffer.isEmpty())
+                            this.sending_buffer.poll(); //removes the first element from the buffer
+                        //we have to count this packet as sent, so increase the counter
+                        numSent++;
+                    } else if (sendingStat == StatusCode.THROW_PCKT) {
+
+                        if (!this.sending_buffer.isEmpty())
+                            this.lostbuffer.add(this.sending_buffer.poll()); //removes the first element from the buffer
+                    } else if (sendingStat == StatusCode.BUSY_MED || sendingStat == StatusCode.NO_ACK) {
+                        //we did not succeed because the medium is busy or because the packet got lost somehow
+                        //so, pick a random backoff and wait this backoff time, giving the other device a chance to finish its sending process then try again
+                        //only after the backoff time, we should try again
+                        Random r = new Random();
+                        int backoff = r.nextInt((this.current_CW) + 1);
+                        try {
+                            //the casting does not maters, everything is integer anyway...
+                            TimeUnit.MICROSECONDS.sleep((long) this.sup_standard.short_slot_time * backoff);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+                //System.out.println(this.toString()+"is still running! "+ exit +this.sending_buffer.size());
+
+            }
+            /*
+            while (!exit)
+            {
+                System.out.println(this.toString()+" finished but still running! "+ exit +this.sending_buffer.size());
+
+                //wait until simulation stops, so other devices could still send us packets
+
             }
 
-
+             */
 
 
            /* Medium devAP = this.connected_devs.get(net.getAP()); //the channel between the device and this device

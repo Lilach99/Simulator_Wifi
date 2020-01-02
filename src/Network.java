@@ -75,6 +75,7 @@ public class Network implements Serializable {
             //adds a medium between the device and the network Access Point
             Medium med = this.createMedium(AP, dev, plp, 50000, 11); //selects channel 11 always, can be changed
             mediums.add(med);
+            mediums.add(med);
             this.AP.connected_devs.put(dev, med);
             dev.addConnectedDev(this.AP, med);
             this.world.put(new Pair<>(dev, this.AP), med); //Device and than AP!!!
@@ -83,7 +84,7 @@ public class Network implements Serializable {
             AP.addListener(dev, med);
 
             dev.connect(); //have to go through probe, auth, assoc
-            System.out.println("Ready to communicate!");
+            //System.out.println("Ready to communicate!");
             //updating the channels' communication states
             med.setComState(ComState.AA);
 

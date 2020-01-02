@@ -24,6 +24,9 @@ public class Main {
         System.out.println("Acks AP got:" + +net.AP.ctrl_buffer.size());
         System.out.println("Data station got: "+ (net.devices.getFirst().buffer.size()));
         System.out.println("Acks station got:" + net.devices.getFirst().ctrl_buffer.size());
+        System.out.println("Lost packets of AP: "+ net.AP.lostbuffer.size());
+        System.out.println("Lost packets of device: "+ net.devices.getFirst().lostbuffer.size());
+
         writePackets(net.devices.getFirst());
         writePackets(net.AP);
 
@@ -37,10 +40,11 @@ public class Main {
         rates.add(2.0);
         rates.add(2.0);
         stans.add(new Standard(Name.N));
-        //reasonable timeout would be ~ packet_sending_duration+ack_sending_duration ~ 200,000+50,000
-        Network net = new Network("home", "22:55:66:88:77:99", new Standard(Name.N), rates, 250000, simulationDuration);
-        Device dev1 = net.createDevice("lilach_phone", "82:11:35:46:FE:19", rates, new Standard(Name.N), 250000, net.AP, simulationDuration);
-        net.addDevice(dev1, 0.5);
+        //reasonable timeout would be ~ packet_sending_duration + ack_sending_duration ~ 200,000 + 50,000
+        //timeout = SIFS + ACK_DUR + SLOT_TIME
+        Network net = new Network("home", "22:55:66:88:77:99", new Standard(Name.N), rates, 210000, simulationDuration);
+        Device dev1 = net.createDevice("lilach_phone", "82:11:35:46:FE:19", rates, new Standard(Name.N), 210000, net.AP, simulationDuration);
+        net.addDevice(dev1, 0);
         net.AP.setDestination(dev1);
         dev1.preparePackets();
         net.AP.preparePackets();
@@ -49,10 +53,11 @@ public class Main {
         //however, the probability that the source get an ACK on it is (1-plpTo)(1-plpFrom), which is smaller!
         //for this reason, setting plpFrom to 0.1 and plpTo to 0.5 make sense
 
-        dev1.startSending();
-        //Thread.sleep(1000);
         net.AP.startSending();
+        dev1.startSending();
+
         Thread.sleep(simulationDuration);
+
         dev1.stopSending();
         net.AP.stopSending();
 
