@@ -2,7 +2,7 @@
 enum SType{
     ACK;
 }
-public class ControlPacket extends Packet {
+public class ControlPacket extends Packet implements Comparable<Packet> {
 
     SType subtype;
     Packet packet_ack; //the packet this ControlPacket is "ackking"

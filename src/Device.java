@@ -32,7 +32,7 @@ public class Device implements InputListener, Runnable, Serializable {
     Standard sup_standard; //an set of supported standards
     volatile Queue<Packet> buffer; //for input data packets
     volatile Queue<ControlPacket> ctrl_buffer; //for input control packets only
-    volatile Queue<Packet> sending_buffer; //for output packets (the packets we want to send)
+    volatile PriorityQueue<Packet> sending_buffer; //for output packets (the packets we want to send)
     int working_time; //the number of milliseconds the device should work
     int sending_goal; //an integer number indicates the desired number of packets we want to send, depends on the device sending rate and on the working time
     Network net; //for now, assume a device is connected to a single network at a time
@@ -589,20 +589,61 @@ public class Device implements InputListener, Runnable, Serializable {
                 //System.out.println(this.toString()+" sending try");
                 //take the first packet from the priority queue without removing it yet, and try to send it
                 if(!this.sending_buffer.isEmpty()) {
+                    Packet p = this.sending_buffer.peek();
                     StatusCode sendingStat = this.sendPacket(this.sending_buffer.peek(), true);
                     //System.out.println(sendingStat.toString());
                     //System.out.println(sendingStat.toString()+" "+this.sending_buffer.peek().toString());
                     if (sendingStat == StatusCode.SUCCESS) {
                         //sending ends successfully, remove the first packet from the buffer
                         //System.out.println(this.toString()+"sending buffer size:" + this.sending_buffer.size());
-                        if (!this.sending_buffer.isEmpty())
-                            this.sending_buffer.poll(); //removes the first element from the buffer
+
+                        if (!this.sending_buffer.isEmpty() && this.sending_buffer!=null)
+                        {/*
+                            try {
+                                //just in case someone is touching the sending buffer right now
+                                TimeUnit.MICROSECONDS.sleep((long) this.sup_standard.short_slot_time * 5);
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                            this.sending_buffer.remove(p); //removes the first element from the buffer
+
+                        }
+*/
+
+
+                            try{
+                                this.sending_buffer.poll(); //removes the first element from the buffer
+                            }
+                            catch (java.lang.NullPointerException exp)
+                            {
+                                //try again, maybe someone has just touched the queue the moment we tried to poll...
+                                try {
+                                    this.sending_buffer.poll(); //removes the first element from the buffer
+
+                                }
+                                catch (java.lang.NullPointerException exp1)
+                                {
+                                    try {
+                                        this.sending_buffer.poll(); //removes the first element from the buffer
+
+                                    }
+                                    catch (java.lang.NullPointerException exp2)
+                                    {
+                                        System.out.println("packet did not succeed getting out of the buffer");
+                                    }
+
+                                }
+                                }
+                            }
+
+
                         //we have to count this packet as sent, so increase the counter
                         numSent++;
                     } else if (sendingStat == StatusCode.THROW_PCKT) {
 
-                        if (!this.sending_buffer.isEmpty())
-                            this.lostbuffer.add(this.sending_buffer.poll()); //removes the first element from the buffer
+                        if (!this.sending_buffer.isEmpty() && this.sending_buffer!=null)
+                            this.sending_buffer.poll();
+                            this.lostbuffer.add(p); //removes the first element from the buffer
                     } else if (sendingStat == StatusCode.BUSY_MED || sendingStat == StatusCode.NO_ACK) {
                         //we did not succeed because the medium is busy or because the packet got lost somehow
                         //so, pick a random backoff and wait this backoff time, giving the other device a chance to finish its sending process then try again
