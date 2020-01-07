@@ -16,7 +16,7 @@ import java.util.LinkedList;
 public class Main {
 
     public static void main(String[] args) throws Exception {
-        int simDur = 120000;
+        int simDur = 240000;
         Network net = simulate(simDur);
         //Thread.sleep(20000);
         stopSimulate(net);

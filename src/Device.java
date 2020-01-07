@@ -6,6 +6,7 @@ import java.lang.String;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.Executors;
+import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -32,7 +33,7 @@ public class Device implements InputListener, Runnable, Serializable {
     Standard sup_standard; //an set of supported standards
     volatile Queue<Packet> buffer; //for input data packets
     volatile Queue<ControlPacket> ctrl_buffer; //for input control packets only
-    volatile PriorityQueue<Packet> sending_buffer; //for output packets (the packets we want to send)
+    volatile PriorityBlockingQueue<Packet> sending_buffer; //for output packets (the packets we want to send)
     int working_time; //the number of milliseconds the device should work
     int sending_goal; //an integer number indicates the desired number of packets we want to send, depends on the device sending rate and on the working time
     Network net; //for now, assume a device is connected to a single network at a time
@@ -82,7 +83,7 @@ public class Device implements InputListener, Runnable, Serializable {
         this.connected_devs = new HashMap<>();
         this.buffer = new PriorityQueue<>();
         this.ctrl_buffer = new PriorityQueue<>();
-        this.sending_buffer = new PriorityQueue<Packet>(Packet::compareTo);
+        this.sending_buffer = new PriorityBlockingQueue<>();
         this.working_time = working_time;
         this.net = net;
         this.timeout = timeout;
@@ -106,7 +107,7 @@ public class Device implements InputListener, Runnable, Serializable {
         this.connected_devs = new HashMap<>();
         this.buffer = new PriorityQueue<>();
         this.ctrl_buffer = new PriorityQueue<>();
-        this.sending_buffer = new PriorityQueue<Packet>(Packet::compareTo);
+        this.sending_buffer = new PriorityBlockingQueue<>();
         this.working_time = working_time;
         this.net = net;
         this.timeout = timeout;
@@ -598,7 +599,13 @@ public class Device implements InputListener, Runnable, Serializable {
                         //System.out.println(this.toString()+"sending buffer size:" + this.sending_buffer.size());
 
                         if (!this.sending_buffer.isEmpty() && this.sending_buffer!=null)
-                        {/*
+                        {
+                            try {
+                                this.sending_buffer.take();
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                            /*
                             try {
                                 //just in case someone is touching the sending buffer right now
                                 TimeUnit.MICROSECONDS.sleep((long) this.sup_standard.short_slot_time * 5);
@@ -610,7 +617,7 @@ public class Device implements InputListener, Runnable, Serializable {
                         }
 */
 
-
+/*
                             try{
                                 this.sending_buffer.poll(); //removes the first element from the buffer
                             }
@@ -634,6 +641,8 @@ public class Device implements InputListener, Runnable, Serializable {
 
                                 }
                                 }
+
+ */
                             }
 
 
@@ -642,7 +651,15 @@ public class Device implements InputListener, Runnable, Serializable {
                     } else if (sendingStat == StatusCode.THROW_PCKT) {
 
                         if (!this.sending_buffer.isEmpty() && this.sending_buffer!=null)
-                            this.sending_buffer.poll();
+                        {
+                            try {
+                                this.sending_buffer.take();
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                            //this.sending_buffer.poll();
+                        }
+
                             this.lostbuffer.add(p); //removes the first element from the buffer
                     } else if (sendingStat == StatusCode.BUSY_MED || sendingStat == StatusCode.NO_ACK) {
                         //we did not succeed because the medium is busy or because the packet got lost somehow
