@@ -44,7 +44,7 @@ public class Device implements InputListener, Runnable, Serializable {
     boolean auth = false;
     boolean assc = false;
 
-    int max_retries = 14; //number of times the device retries to send a packet that has not been acked before timeout expired
+    int max_retries; //number of times the device retries to send a packet that has not been acked before timeout expired
 
     Thread send_packets;
     InputHandler input_handler;
@@ -218,6 +218,10 @@ public class Device implements InputListener, Runnable, Serializable {
 
 */
 
+    public void setNumRetries(int numRetries)
+    {
+        this.max_retries = numRetries;
+    }
     //Note that the connection session is done with 0 probability of loss now!
 
     public boolean probeRequest() { //sending a probe request to an AP, returns 1 on success
@@ -342,7 +346,7 @@ public class Device implements InputListener, Runnable, Serializable {
             //check of we have already sent the packet for the maximum number of times allowed
             if(packet.num_retries > max_retries)
             {
-                System.out.println("Throw :(");
+                //System.out.println("Throw :(");
                 return StatusCode.THROW_PCKT;
             }
             /*this.current_CW /= 2; //at the first try we do not have to increase it

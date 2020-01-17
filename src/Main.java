@@ -16,24 +16,55 @@ import java.util.LinkedList;
 public class Main {
 
     public static void main(String[] args) throws Exception {
-        int simDur = 240000;
-        Network net = simulate(simDur);
+        int simDur = 120000;
+        Network net = simulate(simDur, 1);
         //Thread.sleep(20000);
         stopSimulate(net);
-        System.out.println("Data AP got: "+ net.AP.buffer.size());
-        System.out.println("Acks AP got:" + +net.AP.ctrl_buffer.size());
-        System.out.println("Data station got: "+ (net.devices.getFirst().buffer.size()));
-        System.out.println("Acks station got:" + net.devices.getFirst().ctrl_buffer.size());
+        //System.out.println("Data AP got: "+ net.AP.buffer.size());
+        //System.out.println("Acks AP got:" + +net.AP.ctrl_buffer.size());
+        //System.out.println("Data station got: "+ (net.devices.getFirst().buffer.size()));
+        //System.out.println("Acks station got:" + net.devices.getFirst().ctrl_buffer.size());
+        System.out.println("For Num Retries = 1");
         System.out.println("Lost packets of AP: "+ net.AP.lostbuffer.size());
         System.out.println("Lost packets of device: "+ net.devices.getFirst().lostbuffer.size());
+        double lossPer = (((net.AP.lostbuffer.size()+net.devices.getFirst().lostbuffer.size())/(2*(simDur/1000)*2)));
+        System.out.println("Success Percentage:"+(1-lossPer)*100);
+        System.out.println(" ");
 
-        writePackets(net.devices.getFirst());
-        writePackets(net.AP);
+        net = simulate(simDur, 4);
+        stopSimulate(net);
+        System.out.println("For Num Retries = 4");
+        System.out.println("Lost packets of AP: "+ net.AP.lostbuffer.size());
+        System.out.println("Lost packets of device: "+ net.devices.getFirst().lostbuffer.size());
+        lossPer = (((net.AP.lostbuffer.size()+net.devices.getFirst().lostbuffer.size())/(2*(simDur/1000)*2)));
+        System.out.println("Success Percentage:"+(1-lossPer)*100);
+        System.out.println(" ");
+
+        net = simulate(simDur, 7);
+        stopSimulate(net);
+        System.out.println("For Num Retries = 7");
+        System.out.println("Lost packets of AP: "+ net.AP.lostbuffer.size());
+        System.out.println("Lost packets of device: "+ net.devices.getFirst().lostbuffer.size());
+        lossPer = (((net.AP.lostbuffer.size()+net.devices.getFirst().lostbuffer.size())/(2*(simDur/1000)*2)));
+        System.out.println("Success Percentage:"+(1-lossPer)*100);
+        System.out.println(" ");
+
+        net = simulate(simDur, 14);
+        stopSimulate(net);
+        System.out.println("For Num Retries = 14");
+        System.out.println("Lost packets of AP: "+ net.AP.lostbuffer.size());
+        System.out.println("Lost packets of device: "+ net.devices.getFirst().lostbuffer.size());
+        lossPer = ((net.AP.lostbuffer.size()+net.devices.getFirst().lostbuffer.size())/(2*(simDur/1000)*2));
+        System.out.println("Success Percentage:"+(1-lossPer)*100);
+        System.out.println(" ");
+
+        //writePackets(net.devices.getFirst());
+        //writePackets(net.AP);
 
     }
 
     //simulationDuration is in milliseconds
-    public static Network simulate(int simulationDuration) throws InterruptedException { //testing function, for now running communication from a station (device) and an AP
+    public static Network simulate(int simulationDuration, int numRet) throws InterruptedException { //testing function, for now running communication from a station (device) and an AP
         HashSet<Standard> stans = new HashSet<>();
         LinkedList<Double> rates = new LinkedList<>();
         rates.add(1.0);
@@ -44,10 +75,12 @@ public class Main {
         //timeout = SIFS + ACK_DUR + SLOT_TIME
         Network net = new Network("home", "22:55:66:88:77:99", new Standard(Name.N), rates, 210000, simulationDuration);
         Device dev1 = net.createDevice("lilach_phone", "82:11:35:46:FE:19", rates, new Standard(Name.N), 210000, net.AP, simulationDuration);
-        net.addDevice(dev1, 0);
+        net.addDevice(dev1, 0.95);
         net.AP.setDestination(dev1);
         dev1.preparePackets();
         net.AP.preparePackets();
+        dev1.setNumRetries(numRet);
+        net.AP.setNumRetries(numRet);
         //Note: there seems to be some bias in the loss percentage from the AP, the device is less likely to get packets
         //that's because the probability that the probability the destination get a packet is (1-plpTo)
         //however, the probability that the source get an ACK on it is (1-plpTo)(1-plpFrom), which is smaller!
